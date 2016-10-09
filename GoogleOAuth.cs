@@ -108,77 +108,87 @@ namespace Google
             }
 
             // Exchange the code for tokens
+            return ExchangeForTokens(string.Format("code={0}&client_id={1}&client_secret={2}&redirect_uri={3}&grant_type=authorization_code",
+                code, m_clientId, m_clientSecret, redirectUrl));
+        }
+
+        public bool Refresh(string refreshToken)
+        {
+            Refresh_Token = refreshToken;
+            return ExchangeForTokens(string.Format("refresh_token={0}&client_id={1}&client_secret={2}&grant_type=refresh_token",
+                refreshToken, m_clientId, m_clientSecret));
+        }
+
+        private bool ExchangeForTokens(string requestString)
+        {
+            HttpWebRequest tokenRequest = (HttpWebRequest)WebRequest.Create(c_googleTokenExchangeEndpoint);
+            tokenRequest.Method = "POST";
+            tokenRequest.ContentType = "application/x-www-form-urlencoded";
+            tokenRequest.Accept = "Accept=text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+            byte[] bodyBytes = Encoding.ASCII.GetBytes(requestString);
+            tokenRequest.ContentLength = bodyBytes.Length;
+            using (var stream = tokenRequest.GetRequestStream())
             {
-                string tokenRequestBody = string.Format("code={0}&client_id={1}&client_secret={2}&redirect_uri={3}&grant_type=authorization_code",
-                    code, m_clientId, m_clientSecret, redirectUrl);
-                HttpWebRequest tokenRequest = (HttpWebRequest)WebRequest.Create(c_googleTokenExchangeEndpoint);
-                tokenRequest.Method = "POST";
-                tokenRequest.ContentType = "application/x-www-form-urlencoded";
-                tokenRequest.Accept = "Accept=text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-                byte[] bodyBytes = Encoding.ASCII.GetBytes(tokenRequestBody);
-                tokenRequest.ContentLength = bodyBytes.Length;
-                using (var stream = tokenRequest.GetRequestStream())
-                {
-                    stream.Write(bodyBytes, 0, bodyBytes.Length);
-                }
+                stream.Write(bodyBytes, 0, bodyBytes.Length);
+            }
 
-                try
+            try
+            {
+                WebResponse response = tokenRequest.GetResponse();
+                using (var reader = new JsonReader(response.GetResponseStream()))
                 {
-                    WebResponse response = tokenRequest.GetResponse();
-                    using (var reader = new JsonReader(response.GetResponseStream()))
+                    while (reader.Read())
                     {
-                        while (reader.Read())
+                        switch (reader.Name)
                         {
-                            switch (reader.Name)
-                            {
-                                case "access_token":
-                                    Access_Token = reader.Value;
-                                    break;
+                            case "access_token":
+                                Access_Token = reader.Value;
+                                break;
 
-                                case "id_token":
-                                    Id_Token = reader.Value;
-                                    break;
+                            case "id_token":
+                                Id_Token = reader.Value;
+                                break;
 
-                                case "refresh_token":
-                                    Refresh_Token = reader.Value;
-                                    break;
+                            case "refresh_token":
+                                Refresh_Token = reader.Value;
+                                break;
 
-                                case "expires_in":
-                                    {
-                                        int val;
-                                        int.TryParse(reader.Value, out val);
-                                        Expires_In = val;
-                                    }
-                                    break;
+                            case "expires_in":
+                                {
+                                    int val;
+                                    int.TryParse(reader.Value, out val);
+                                    Expires_In = val;
+                                }
+                                break;
 
-                                case "token_type":
-                                    Token_Type = reader.Value;
-                                    break;
-                            }
+                            case "token_type":
+                                Token_Type = reader.Value;
+                                break;
                         }
                     }
                 }
-                catch (WebException ex)
+            }
+            catch (WebException ex)
+            {
+                string error = "Error converting OAuth Token";
+                var response = ex.Response as HttpWebResponse;
+                if (response != null)
                 {
-                    string error = "Error converting OAuth Token";
-                    var response = ex.Response as HttpWebResponse;
-                    if (response != null)
+                    string errTxt = string.Empty;
+                    using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
                     {
-                        string errTxt = string.Empty;
-                        using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
-                        {
-                            errTxt = reader.ReadToEnd();
-                        }
-
-                        error = string.Format("Error converting OAuth Token: HTTP {0}: {1}", response.StatusCode, errTxt);
+                        errTxt = reader.ReadToEnd();
                     }
-                    Error = error;
-                    return false;
+
+                    error = string.Format("Error converting OAuth Token: HTTP {0}: {1}", response.StatusCode, errTxt);
                 }
+                Error = error;
+                return false;
             }
 
             return true;
         }
+
 
         #region Private Helper Functions
 
