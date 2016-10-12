@@ -333,6 +333,18 @@ namespace WinShell
     [StructLayout (LayoutKind.Sequential, Pack = 4)]
     public struct PROPERTYKEY
     {
+        public PROPERTYKEY(Guid guid, UInt32 propertyId)
+        {
+            fmtid = guid;
+            pid = propertyId;
+        }
+
+        public PROPERTYKEY(string guid, UInt32 propertyId)
+        {
+            fmtid = new Guid(guid);
+            pid = propertyId;
+        }
+
         public Guid fmtid;
         public UInt32 pid;
     }
