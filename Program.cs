@@ -6,16 +6,9 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Xml;
 using System.Xml.Linq;
+using System.Collections;
 
 /* TODO:
-   * Embed photo in link to album
-   * Transfer geotags if present.
-   * Transfer keywords to blog tags.
-   * Clean up data dumps.
-   * Command-line
-       * photo(s) - multiple filenames plus wildcards
-       * blog name
-       * interactve login or persistent token
        * size (but with default)
 
     To set up
@@ -28,39 +21,238 @@ namespace FmPostToBlogger
 {
     class Program
     {
+// Column 78                                                                 |
+        const string c_syntax =
+@"Syntax: FMPostToBlogger: <options> <filenames>
+Options:
+   -h                      Print this help text.
+   -authint                Launch a browser to log in to your Google account
+                           interactively.
+   -authtoken <token>      Specify a refresh token from a previous login to
+                           with which to authenticate. When you log in
+                           interactively the applicaiton will print a refresh
+                           token that you can use for future postings.
+   -blog <name>            Name of a blog on which you have posting
+                           privileges.
+   -draft                  Post in draft form. You can log into Blogger and
+                           view or edit the post before publishing it.
+   -dryrun                 Do a dry run. Connect with the blog, report
+                           metadata, and check for conflicts with existing
+                           posts but do not actually post to the blog.
+
+Filenames:
+   Each file will be converted into a blog post. Multiple file names may be
+   included and wildcards are supported. Presently only JPEG photos (with a
+   .jpg or .jpeg extension) are supported. A future relsase will add support
+   for MarkDown format files.
+
+Examples:
+   FMPostToBlogger -authint -blog ""There and Back Again"" Bilbo.jpg Gandalf.jpg
+           This will interactively log into Google (using your web browser) and
+           then post two photos, Bilbo.jpg and Gandalf.jpg on the blog titled
+           ""There and Back Again"".
+
+   FMPostToBlogger -refresh_token 1/XirnVAK -blog ""Asgard"" Thor.jpg Sif.jpg
+           This will use a refresh token (presumably from a previous run) to
+           authenticate and then post Thor.jpg and Sif.jpg on the blog titled
+           ""Asgard"".          
+
+JPEG Details:
+   Files must include a title in the JPEG metadata. This is is used as the
+   title in the blog posting. Other metadata is optional. See below for
+   metadata support. One way to view and edit metadata is to use the
+   properties-details page in the Microsoft Windows file explorer. Many
+   JPEG and photo album tools also support editing metadata.
+
+JPEG Metadata Support:
+   Title        Required - Becomes the title of the blog post.
+   Comments     Optional - Included after the photo as text in the blog post.
+   Date taken   Optional - Used as the posting date of the blog post. The
+                           update date of the post will be the date the post
+                           is uploaded.
+   GPS Location            Often included in phone camera phones, the GPS
+                           location will be included in the blog post.
+                           Blogger usually includes this in the footer of the
+                           post. Clicking on the location will bring up a
+                           map of where the photo was taken.
+   Tags/Keywords           Will be included as labels on the blog post.
+
+Description:
+   FMPostToBlogger is a command-line utility that makes Google Blogger posts
+   out of photos. MarkDown files will be supported soon.
+
+   To use, you must first set up a blog at https://blogger.com
+   and make at least one post that includes a photo. Making the post will
+   cause blogger to create a corresponding photo album in the google album
+   archive (see https://get.google.com/albumarchive). You can delete the
+   sample post afterward. FMPostToBlogger locates the blog and the
+   corresponding album by name (not ID).
+
+   For details, the latest release, and for open source code see
+   http://github.com/FileMeta/FMPostToBlogger
+";
+// Column 78                                                                 |
+
         const string c_googleClientId = "836437994394-2a38027hpt3ao7fdnvjffkkv2rbqr715.apps.googleusercontent.com";
         const string c_googleClientSecret = "wJUdAD-LM7wc5nNKNipVGkCy";
-
-        const string c_googleRefreshToken = "1/XirnVAK_bKCqm7HNfD_Adw-1ilIRwTSa0-oM6rp-9PM";
 
         static void Main(string[] args)
         {
             try
             {
-                var oauth = new Google.OAuth(c_googleClientId, c_googleClientSecret);
-
-                //Console.WriteLine("Getting authorization from Google. Please respond to the login prompt in your browser.");
-                //bool authorized = oauth.Authorize(Google.WebAlbum.OAuthScope, Google.Blog.OAuthScope);
-                //Win32Interop.ConsoleHelper.BringConsoleToFront();
-
-                bool authorized = oauth.Refresh(c_googleRefreshToken);
-                if (!authorized)
+                // Parse the command line
+                bool showSyntax = false;
+                bool authInteractive = false;
+                string refreshToken = null;
+                string blogName = null;
+                List<string> filenames = new List<string>();
+                bool draftMode = false;
+                bool dryRun = false;
+                if (args.Length == 0)
                 {
-                    throw new ApplicationException(oauth.Error);
+                    showSyntax = true;
+                }
+                for (int i = 0; i < args.Length; ++i)
+                {
+                    switch (args[i].ToLowerInvariant())
+                    {
+                        case "-h":
+                            showSyntax = true;
+                            break;
+
+                        case "-authint":
+                            authInteractive = true;
+                            break;
+
+                        case "-authtoken":
+                            ++i;
+                            refreshToken = args[i];
+                            break;
+
+                        case "-blog":
+                            ++i;
+                            blogName = args[i];
+                            break;
+
+                        case "-draft":
+                            draftMode = true;
+                            break;
+
+                        case "-dryrun":
+                            dryRun = true;
+                            break;
+
+                        default:
+                            if (args[i][0] == '-')
+                            {
+                                throw new ArgumentException("Unexpected command-line option: " + args[i]);
+                            }
+                            else
+                            {
+                                filenames.Add(args[i]);
+                            }
+                            break;
+                    }
                 }
 
-                Console.WriteLine("Authenticated with Google.");
-                Console.WriteLine("refresh_token=" + oauth.Refresh_Token);
-                Console.WriteLine();
-
-                bool success = PostFromPhoto(oauth, "adventures with julie and brandt",
-                    @"C:\Users\brand\Pictures\BlogSamples\WP_20161005_020.jpg");
-
-                Environment.ExitCode =  success ? 0 : 1;
-                if (success)
+                // Not really a loop. Just for convenience of using 'break';
+                do
                 {
-                    Console.WriteLine("Success!");
+
+                    if (showSyntax)
+                    {
+                        Console.Write(c_syntax);
+                        break;
+                    }
+
+                    // Check authentication method
+                    if (authInteractive != (refreshToken == null))
+                    {
+                        throw new ArgumentException("Must specify one authentication method.\r\nEither '-authint' or '-authtoken' but not both.");
+                    }
+
+                    // Authenticate and authorize.
+                    var oauth = new Google.OAuth(c_googleClientId, c_googleClientSecret);
+                    bool authorized = false;
+                    if (authInteractive)
+                    {
+                        Console.WriteLine("Getting authorization from Google. Please respond to the login prompt in your browser.");
+                        authorized = oauth.Authorize(Google.WebAlbum.OAuthScope, Google.Blog.OAuthScope);
+                        Win32Interop.ConsoleHelper.BringConsoleToFront();
+                    }
+                    else if (refreshToken != null)
+                    {
+                        authorized = oauth.Refresh(refreshToken);
+                    }
+                    if (!authorized)
+                    {
+                        throw new ArgumentException("Failed to authenticate with Google: " + oauth.Error);
+                    }
+                    Console.WriteLine("Authenticated with Google.");
+                    Console.WriteLine("refresh_token (-authtoken) = " + oauth.Refresh_Token);
+                    Console.WriteLine();
+
+                    if (string.IsNullOrEmpty(blogName))
+                    {
+                        if (filenames.Count != 0)
+                        {
+                            throw new ArgumentException("No blog name specified.");
+                        }
+                        break;
+                    }
+
+                    // Open the blog poster and ensure the the blog exists
+                    BlogPoster blogPoster = new BlogPoster(oauth.Access_Token);
+                    if (!blogPoster.Open(blogName))
+                    {
+                        break;  // Error message was already reported.
+                    }
+                    blogPoster.DraftMode = draftMode;
+                    blogPoster.DryRun = dryRun;
+
+                    int postCount = 0;
+                    int errorCount = 0;
+
+                    // Post the files
+                    foreach (string filename in new FileNameEnumerable(filenames))
+                    {
+                        Console.WriteLine(filename);
+                        string ext = Path.GetExtension(filename);
+                        if (ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+                            || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (blogPoster.PostFromPhoto(filename))
+                            {
+                                ++postCount; // PostFromPhoto reports success.
+                            }
+                            else
+                            {
+                                ++errorCount;
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("File type '{0}' not supported for posting to blog.", ext);
+                            ++errorCount;
+                        }
+                        Console.WriteLine();
+                    }
+
+                    if (postCount == 0 && errorCount == 0)
+                    {
+                        Console.WriteLine("No files specified to post.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("{0} new blog posts.", postCount);
+                        if (errorCount > 0)
+                        {
+                            Console.WriteLine("{0} post errors.", errorCount);
+                        }
+                    }
                 }
+                while (false); // Exit task options
+
             }
             catch (Exception err)
             {
@@ -70,6 +262,7 @@ namespace FmPostToBlogger
 #else
                 Console.WriteLine(err.Message());
 #endif
+                Console.WriteLine("Enter 'FMPostToBlogger -h' for help.");
             }
 
             if (Win32Interop.ConsoleHelper.IsSoleConsoleOwner)
@@ -79,6 +272,48 @@ namespace FmPostToBlogger
                 Console.Write("Press any key to exit.");
                 Console.ReadKey(true);
             }
+        }
+
+    } // Class FmPostToBlogger
+
+    /// <summary>
+    /// Handles identifying the blog and photo album and posting to both.
+    /// Associated with command processing, this reports progress and errors
+    /// directly to the console.
+    /// </summary>
+    class BlogPoster
+    {
+        string m_accessToken;
+        Google.Blog m_blog;
+        Google.WebAlbum m_album;
+
+        public BlogPoster(string accessToken)
+        {
+            m_accessToken = accessToken;
+        }
+
+        public bool DraftMode { get; set; }
+        public bool DryRun { get; set; }
+
+        public bool Open(string blogName)
+        {
+            // Find the blog
+            m_blog = Google.Blog.GetByName(m_accessToken, blogName);
+            if (m_blog == null)
+            {
+                Console.WriteLine("Blog '{0}' not found.", blogName);
+                return false;
+            }
+
+            // Find the corresponding album
+            m_album = Google.WebAlbum.GetByTitle(m_accessToken, blogName);
+            if (m_album == null)
+            {
+                Console.WriteLine("Google/Picasa WebAlbum for blog '{0}' not found.", blogName);
+                return false;
+            }
+
+            return true;
         }
 
         // Property keys retrieved from https://msdn.microsoft.com/en-us/library/windows/desktop/dd561977(v=vs.85).aspx
@@ -91,7 +326,7 @@ namespace FmPostToBlogger
         static WinShell.PROPERTYKEY s_pkLongitude = new WinShell.PROPERTYKEY("C4C4DBB2-B593-466B-BBDA-D03D27D5E43A", 100); // System.GPS.Longitude
         static WinShell.PROPERTYKEY s_pkLongitudeRef = new WinShell.PROPERTYKEY("33DCF22B-28D5-464C-8035-1EE9EFD25278", 100); // System.GPS.LongitudeRef
 
-        private static bool PostFromPhoto(Google.OAuth oauth, string blogName, string filename)
+        public bool PostFromPhoto(string filename)
         {
             {
                 string extension = Path.GetExtension(filename);
@@ -132,29 +367,13 @@ namespace FmPostToBlogger
                 photoComment = string.Empty;
             }
 
-            // Find the blog
-            var blog = Google.Blog.GetByName(oauth.Access_Token, blogName);
-            if (blog == null)
-            {
-                Console.WriteLine("Blog '{0}' not found.", blogName);
-                return false;
-            }
-
             // See if the post already exists
-            var blogPost = blog.GetPostByTitle(photoTitle);
+            var blogPost = m_blog.GetPostByTitle(photoTitle);
             if (blogPost != null)
             {
-                Console.WriteLine("Post with title '{0}' already exists in blog '{1}'.", photoTitle, blogName);
+                Console.WriteLine("Post with title '{0}' already exists in blog '{1}'.", photoTitle, m_blog.Name);
                 return false;
             }
-
-            var album = Google.WebAlbum.GetByTitle(oauth.Access_Token, blogName);
-            if (album == null)
-            {
-                Console.WriteLine("Google/Picasa WebAlbum for blog '{0}' not found.", blogName);
-                return false;
-            }
-            Console.WriteLine("Adding photo to album: " + album.Title);
 
             /* In Google/Picasa, the title is really a name or filename so we map things this way
             * | FileMeta  | Google  |
@@ -164,11 +383,13 @@ namespace FmPostToBlogger
             * | comment   | n/a     |
             */
 
+            Console.WriteLine("Adding photo to album: " + m_album.Title);
+
             // See if the photo already exists
-            var photo = album.GetPhotoBySummary(photoTitle);
+            var photo = m_album.GetPhotoBySummary(photoTitle);
             if (photo != null)
             {
-                Console.WriteLine("Photo with title '{0}' already exists in album '{1}'.", photo.Summary, blogName);
+                Console.WriteLine("Photo with title '{0}' already exists in album '{1}'.", photo.Summary, m_album.Title);
                 return false;
             }
 
@@ -177,19 +398,38 @@ namespace FmPostToBlogger
             {
                 string basename = Path.GetFileNameWithoutExtension(filename);
                 name = string.Concat(basename, ".jpg");
-                if (album.GetPhotoByTitle(name) != null)
+                if (m_album.GetPhotoByTitle(name) != null)
                 {
-                    for (int i=1; true; ++i)
+                    for (int i = 1; true; ++i)
                     {
                         name = string.Concat(basename, "_", i.ToString(), ".jpg");
-                        if (album.GetPhotoByTitle(name) == null) break;
+                        if (m_album.GetPhotoByTitle(name) == null) break;
                     }
                 }
             }
 
+            if (DryRun)
+            {
+                Console.WriteLine("Dry run. Not posting.");
+                Console.WriteLine("Filename: " + Path.GetFileName(filename));
+                Console.WriteLine("Title: " + photoTitle);
+                Console.WriteLine("Comment: " + photoComment);
+                Console.WriteLine("Publish Date: " + metadata.PublishedDate.ToString("s"));
+                if (metadata.Latitude != 0.0 && metadata.Longitude != 0.0)
+                {
+                    Console.WriteLine("Latitude;Longitude: {0:r};{1:r}", metadata.Latitude, metadata.Longitude);
+                }
+                if (metadata.Labels != null)
+                {
+                    Console.WriteLine("Labels: " + string.Join(";", metadata.Labels));
+                }
+                return true;
+            }
+
+            // Add the photo to the album.
             using (var stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-               photo = album.AddPhoto(name, photoTitle, stream);
+                photo = m_album.AddPhoto(name, photoTitle, stream);
             }
 
             /*
@@ -205,7 +445,8 @@ namespace FmPostToBlogger
             Console.WriteLine("Width={0} Height={1}", photo.Width, photo.Height);
             */
 
-            Console.WriteLine("Adding new post to blog: " + blog.Name);
+            // Add the post to the blog
+            Console.WriteLine("Adding new post to blog: " + m_blog.Name);
 
             // Compose the post using XML
             string html;
@@ -222,13 +463,14 @@ namespace FmPostToBlogger
                 html = doc.ToString();
             }
 
+            m_blog.AddPost(photoTitle, html, metadata, DraftMode);
 
-            blog.AddPost(photoTitle, html, metadata);
+            Console.WriteLine(DraftMode ? "Posted as draft!" : "Posted!");
 
             return true;
         }
 
-        public static bool GetLatitudeLongitude(WinShell.PropertyStore store, out double latitude, out double longitude)
+        private static bool GetLatitudeLongitude(WinShell.PropertyStore store, out double latitude, out double longitude)
         {
             latitude = longitude = 0.0;
 
@@ -247,7 +489,7 @@ namespace FmPostToBlogger
             return true;
         }
 
-        static double DegMinSecToDouble(string direction, double[] dms)
+        private static double DegMinSecToDouble(string direction, double[] dms)
         {
             double result = dms[0];
             if (dms.Length > 1) result += dms[1] / 60.0;
@@ -260,8 +502,113 @@ namespace FmPostToBlogger
 
             return result;
         }
+    }
 
+    class FileNameEnumerable : IEnumerable<string>
+    {
+        IEnumerable<string> m_filenamePatterns;
+        string m_defaultDirectory;
 
-    } // Class FmPostToBlogger
+        public FileNameEnumerable(IEnumerable<string> filenamePatterns, string defaultDirectory = null)
+        {
+            m_filenamePatterns = filenamePatterns;
+            m_defaultDirectory = defaultDirectory ?? Environment.CurrentDirectory;
+        }
+
+        public FileNameEnumerable(string filenamePattern, string defaultDirectory = null)
+            : this(new string[] { filenamePattern }, defaultDirectory)
+        {
+        }
+
+        public IEnumerator<string> GetEnumerator()
+        {
+            return new FileNameEnumerator(m_filenamePatterns.GetEnumerator(), m_defaultDirectory);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return this.GetEnumerator();
+        }
+
+        private class FileNameEnumerator : IEnumerator<string>
+        {
+            IEnumerator<string> m_patternEnum;
+            IEnumerator<string> m_filenameEnum;
+            string m_defaultDirectory;
+
+            public FileNameEnumerator(IEnumerator<string> patternEnum, string defaultDirectory)
+            {
+                m_patternEnum = patternEnum;
+                m_defaultDirectory = defaultDirectory;
+            }
+
+            public string Current
+            {
+                get
+                {
+                    return m_filenameEnum.Current;
+                }
+            }
+
+            object IEnumerator.Current
+            {
+                get
+                {
+                    return m_filenameEnum.Current;
+                }
+            }
+
+            public void Dispose()
+            {
+                m_patternEnum.Dispose();
+            }
+
+            public bool MoveNext()
+            {
+                if (m_filenameEnum != null)
+                {
+                    if (m_filenameEnum.MoveNext())
+                    {
+                        return true;
+                    }
+                    m_filenameEnum = null;
+                }
+
+                while (m_patternEnum.MoveNext())
+                {
+                    string pattern = m_patternEnum.Current;
+
+                    string directoryPath = Path.GetDirectoryName(pattern);
+                    if (string.IsNullOrEmpty(directoryPath))
+                    {
+                        directoryPath = m_defaultDirectory;
+                    }
+                    else
+                    {
+                        directoryPath = Path.GetFullPath(Path.Combine(m_defaultDirectory, directoryPath));
+                    }
+                    string[] files = Directory.GetFiles(directoryPath, Path.GetFileName(pattern), SearchOption.TopDirectoryOnly);
+                    if (files.Length > 0)
+                    {
+                        m_filenameEnum = files.AsEnumerable().GetEnumerator();
+                        if (m_filenameEnum.MoveNext()) return true;
+                    }
+                    else
+                    {
+                        // TODO: Make this a delegate for use in non-command-line contexts
+                        Console.WriteLine("No match found for '{0}'", pattern);
+                        Console.WriteLine();
+                    }
+                }
+                return false;
+            }
+
+            public void Reset()
+            {
+                m_filenameEnum = null;
+                m_patternEnum.Reset();
+            }
+        }
+    }
 
 }
