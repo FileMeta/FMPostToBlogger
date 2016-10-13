@@ -34,6 +34,9 @@ Options:
                            token that you can use for future postings.
    -blog <name>            Name of a blog on which you have posting
                            privileges.
+   -imgwidth               Width in web pixels to use on the image for JPEG
+                           posts. Default width used with MarkDown posts.
+                           Default is 800. (See details below.)           
    -draft                  Post in draft form. You can log into Blogger and
                            view or edit the post before publishing it.
    -dryrun                 Do a dry run. Connect with the blog, report
@@ -77,6 +80,16 @@ JPEG Metadata Support:
                            map of where the photo was taken.
    Tags/Keywords           Will be included as labels on the blog post.
 
+Image Widths:
+   The -imgwidth tag indicates the width of the image in pixels as
+   interpreted by the web browser. You should choose a value that works
+   well with your blog layout. With the advent of high resolution
+   displays, browser pixels may be more course than actual image pixels.
+   Accordingly, FMPostToBlogger will request a link from the Google Web Album
+   service that delivers an image approximately double the horizontal
+   resolution specified by -imagewidth those offering high quality images
+   on all devices.
+
 Description:
    FMPostToBlogger is a command-line utility that makes Google Blogger posts
    out of photos. MarkDown files will be supported soon.
@@ -95,6 +108,7 @@ Description:
 
         const string c_googleClientId = "836437994394-2a38027hpt3ao7fdnvjffkkv2rbqr715.apps.googleusercontent.com";
         const string c_googleClientSecret = "wJUdAD-LM7wc5nNKNipVGkCy";
+        const int c_defaultImgWidth = 800;
 
         static void Main(string[] args)
         {
@@ -105,6 +119,7 @@ Description:
                 bool authInteractive = false;
                 string refreshToken = null;
                 string blogName = null;
+                int imgWidth = c_defaultImgWidth;
                 List<string> filenames = new List<string>();
                 bool draftMode = false;
                 bool dryRun = false;
@@ -132,6 +147,14 @@ Description:
                         case "-blog":
                             ++i;
                             blogName = args[i];
+                            break;
+
+                        case "-imgwidth":
+                            ++i;
+                            if (!int.TryParse(args[i], out imgWidth))
+                            {
+                                throw new ArgumentException("Value for -imgwidth is not an integer: " + args[i]);
+                            }
                             break;
 
                         case "-draft":
@@ -207,6 +230,7 @@ Description:
                     {
                         break;  // Error message was already reported.
                     }
+                    blogPoster.ImgWidth = imgWidth;
                     blogPoster.DraftMode = draftMode;
                     blogPoster.DryRun = dryRun;
 
@@ -290,8 +314,10 @@ Description:
         public BlogPoster(string accessToken)
         {
             m_accessToken = accessToken;
+            ImgWidth = 640;
         }
 
+        public int ImgWidth { get; set; }
         public bool DraftMode { get; set; }
         public bool DryRun { get; set; }
 
@@ -438,7 +464,7 @@ Description:
             Console.WriteLine("Width={0} Height={1}", photo.Width, photo.Height);
             */
 
-            photo.Refresh("800u");
+            photo.Refresh(ImgWidth * 2);
             /*
             Console.WriteLine("800 res: " + photo.JpegUrl);
             Console.WriteLine("Alternate: " + photo.AlternateUrl);
@@ -448,6 +474,9 @@ Description:
             // Add the post to the blog
             Console.WriteLine("Adding new post to blog: " + m_blog.Name);
 
+            // Calculate the height that preserves aspect ratio
+            int propHeight = (ImgWidth * photo.Height) / photo.Width;
+
             // Compose the post using XML
             string html;
             {
@@ -456,8 +485,8 @@ Description:
                         new XAttribute("href", photo.AlternateUrl),
                         new XElement("img",
                             new XAttribute("src", photo.JpegUrl),
-                            new XAttribute("width", photo.Width),
-                            new XAttribute("height", photo.Height))),
+                            new XAttribute("width", ImgWidth),
+                            new XAttribute("height", propHeight))),
                     new XElement("br"),
                     photoComment);
                 html = doc.ToString();

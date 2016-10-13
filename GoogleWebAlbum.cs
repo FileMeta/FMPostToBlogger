@@ -256,19 +256,41 @@ namespace Google
 
         }
 
+        static int[] s_imgmaxValues = new int[] { 32, 48, 64, 72, 94, 110, 104, 128, 144, 150, 160, 200, 220, 288, 320, 400, 512, 576, 640, 720, 800, 912, 1024, 1152, 1280, 1440, 1600 };
+
         /// <summary>
         /// Refreshes the photo by re-retrieving the data from the API
         /// </summary>
-        /// <param name="imgmax">The maximum image size for the Image URL or "d" for maximum (see remarks).</param>
+        /// <param name="imgmax">The maximum image size for the Image URL or 0 for native size (see remarks).</param>
         /// <remarks>When retrieving photo information you can specify the maximum size for the image that the URL references.
-        /// Supported sizes are the following. A "u" suffix means "uncropped" a "c" suffix means cropped. When a suffix
-        /// is omitted it defaults to uncropped. Values are in terms of horizontal pixels.
-        /// 32c, 48c, 64c, 72c, 104c, 144c, 150c, 160c
-        /// 32u, 48u, 64u, 72u, 104u, 144u, 150u, 160u, 94u, 110u, 128u, 200u, 220u, 288u, 320u, 400u, 512u, 576u, 640u, 720u, 800u, 912u, 1024u, 1152u, 1280u, 1440u, 1600u
+        /// Google supports the following sizes. The value will be rounded up to the next size.
+        /// Values are in terms of horizontal pixels.
+        /// 32, 48, 64, 72, 94, 110, 104, 128, 144, 150, 160, 200, 220, 288, 320, 400, 512, 576, 640, 720, 800, 912, 1024, 1152, 1280, 1440, 1600
         /// </remarks>
-        public void Refresh(string imgmax = "d")
+        public void Refresh(int imgmax = 0)
         {
-            m_xml = WebAlbumUtility.HttpGetXml(string.Concat(WebAlbumUtility.c_PicasawebEndpoint, "/user/", m_userId, "/album/", m_albumId, "/photoid/", m_photoId, "?imgmax=", imgmax), m_accessToken);
+            // Convert imgmax into a value acceptable to Google
+            string imgmaxStr = null;
+            if (imgmax == 0)
+            {
+                imgmaxStr = "d";
+            }
+            else
+            {
+                foreach (int val in s_imgmaxValues)
+                {
+                    if (val >= imgmax)
+                    {
+                        imgmaxStr = val.ToString() + "u";   // Always uncropped
+                    }
+                    if (imgmaxStr == null)
+                    {
+                        imgmaxStr = "d";
+                    }
+                }
+            }
+
+            m_xml = WebAlbumUtility.HttpGetXml(string.Concat(WebAlbumUtility.c_PicasawebEndpoint, "/user/", m_userId, "/album/", m_albumId, "/photoid/", m_photoId, "?imgmax=", imgmaxStr), m_accessToken);
             //WebAlbumUtility.DumpXml(m_xml, Console.Out);
         }
 
