@@ -81,6 +81,7 @@ namespace Google
         XElement m_doc;
         string m_name;
         string m_blogId;
+        XElement m_contents;
 
         private Blog(string accessToken, XElement doc)
         {
@@ -94,22 +95,36 @@ namespace Google
 
         #region Public Members
 
+        void Refresh()
+        {
+            m_contents = BloggerUtility.HttpGetJson(string.Concat(BloggerUtility.c_BloggerEndpoint, "/blogs/", m_blogId,
+                "/posts?fetchBodies=false&maxResults=500&fields=items(id,title,published,updated,labels,location)"), m_accessToken);
+        }
+
         public string Name { get { return m_name; } }
 
         public BlogPost GetPostByTitle(string title)
         {
-            var doc = BloggerUtility.HttpGetJson(string.Concat(BloggerUtility.c_BloggerEndpoint, "/blogs/", m_blogId,
-                "/posts/search?q=", System.Uri.EscapeDataString(title), "&fields=items(id,title,published,updated,labels,location)"), m_accessToken);
+            if (m_contents == null)
+            {
+                Refresh();
+            }
 
-            var items = doc.Element("items");
-            if (items == null) return null;
+            var items = m_contents.Element("items");
+            if (items == null)
+            {
+                return null;
+            }
 
             IEnumerable<XElement> matches =
                 from el in items.Elements("item")
                 where el.Element("title").Value.Equals(title, StringComparison.OrdinalIgnoreCase)
                 select el;
 
-            if (matches.Count() == 0) return null;
+            if (matches.Count() == 0)
+            {
+                return null;
+            }
 
             return new BlogPost(m_accessToken, matches.First());
         }

@@ -229,6 +229,7 @@ namespace Google
         static XNamespace nsAtom = "http://www.w3.org/2005/Atom";
         static XNamespace nsGphoto = "http://schemas.google.com/photos/2007";
         static XNamespace nsMedia = "http://search.yahoo.com/mrss/";
+        static XNamespace nsExif = "http://schemas.google.com/photos/exif/2007";
 
         string m_accessToken;
         string m_title;
@@ -253,7 +254,6 @@ namespace Google
                 (from el in m_xml.Elements(nsAtom + "link")
                  where el.Attribute("rel").Value == "alternate"
                  select el).First().Attribute("href").Value;
-
         }
 
         static int[] s_imgmaxValues = new int[] { 32, 48, 64, 72, 94, 110, 104, 128, 144, 150, 160, 200, 220, 288, 320, 400, 512, 576, 640, 720, 800, 912, 1024, 1152, 1280, 1440, 1600 };
@@ -326,7 +326,15 @@ namespace Google
             get
             {
                 return int.Parse(m_xml.Element(nsMedia + "group").Element(nsMedia + "content").Attribute("height").Value);
+            }
+        }
 
+        public DateTime DateTaken
+        {
+            get
+            {
+                long ms = long.Parse(m_xml.Element(nsExif + "tags").Element(nsExif + "time").Value);
+                return new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Local).AddMilliseconds(ms);
             }
         }
 
