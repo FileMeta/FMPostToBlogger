@@ -48,9 +48,10 @@ Options:
 
 Filenames:
    Each file will be converted into a blog post. Multiple file names may be
-   included and wildcards are supported. Presently only JPEG photos (with a
-   .jpg or .jpeg extension) are supported. A future relsase will add support
-   for MarkDown format files.
+   included and wildcards are supported. Presently JPEG photos (with a
+   .jpg or .jpeg extension) and MarkDown files (with a .md extension) are
+   supported. Local .jpeg files referenced by MarkDown are automatically
+   uploaded along with the blog post.
 
 Examples:
    FMPostToBlogger -authint -blog ""There and Back Again"" Bilbo.jpg Gandalf.jpg
@@ -61,9 +62,14 @@ Examples:
    FMPostToBlogger -refresh_token 1/XirnVAK -blog ""Asgard"" Thor.jpg Sif.jpg
            This will use a refresh token (presumably from a previous run) to
            authenticate and then post Thor.jpg and Sif.jpg on the blog titled
-           ""Asgard"".          
+           ""Asgard"".
 
-JPEG Details:
+   FMPostToBlogger -refresh_token 1/XirnVAK -blog ""Coding"" GammaCompression.md
+           This will use a refresh token to authenticate, upload all .jpeg
+           images referenced by GammaCompression.md, the post to HTML and
+           upload it to the ""Coding"" blog.
+
+JPEG Post Details:
    Files must include a title in the JPEG metadata. This is is used as the
    title in the blog posting. Other metadata is optional. See below for
    metadata support. One way to view and edit metadata is to use the
@@ -93,7 +99,7 @@ Image Size:
 
 Description:
    FMPostToBlogger is a command-line utility that makes Google Blogger posts
-   out of photos. MarkDown files will be supported soon.
+   out of photos and MarkDown files.
 
    To use, you must first set up a blog at https://blogger.com
    and make at least one post that includes a photo. Making the post will
@@ -107,6 +113,7 @@ Description:
 ";
 // Column 78                                                                 |
 
+        // Even though Google calls it a "Client Secret" it doesn't have to be kept secret.
         const string c_googleClientId = "836437994394-2a38027hpt3ao7fdnvjffkkv2rbqr715.apps.googleusercontent.com";
         const string c_googleClientSecret = "wJUdAD-LM7wc5nNKNipVGkCy";
         public const int c_defaultMaxWidth = 800;
