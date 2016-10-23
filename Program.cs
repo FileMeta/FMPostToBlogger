@@ -8,6 +8,7 @@ using System.Xml;
 using System.Xml.Linq;
 using System.Collections;
 using System.Diagnostics;
+using System.Globalization;
 
 /* TODO:
        * size (but with default)
@@ -265,6 +266,17 @@ Description:
                                 ++errorCount;
                             }
                         }
+                        else if (ext.Equals(".md", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (blogPoster.PostFromMarkDown(filename))
+                            {
+                                ++postCount; // PostFromMarkDown reports success.
+                            }
+                            else
+                            {
+                                ++errorCount;
+                            }
+                        }
                         else
                         {
                             Console.WriteLine("File type '{0}' not supported for posting to blog.", ext);
@@ -355,122 +367,43 @@ Description:
             return true;
         }
 
-        // Property keys retrieved from https://msdn.microsoft.com/en-us/library/windows/desktop/dd561977(v=vs.85).aspx
-        static WinShell.PROPERTYKEY s_pkTitle = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 2); // System.Title
-        static WinShell.PROPERTYKEY s_pkComment = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 6); // System.Comment
-        static WinShell.PROPERTYKEY s_pkKeywords = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 5); // System.Keywords
-        static WinShell.PROPERTYKEY s_pkWidth = new WinShell.PROPERTYKEY("6444048F-4C8B-11D1-8B70-080036B11A03", 3);
-        static WinShell.PROPERTYKEY s_pkHeight = new WinShell.PROPERTYKEY("6444048F-4C8B-11D1-8B70-080036B11A03", 4);
-        static WinShell.PROPERTYKEY s_pkDateTaken = new WinShell.PROPERTYKEY("14B81DA1-0135-4D31-96D9-6CBFC9671A99", 36867); // System.Photo.DateTaken
-        static WinShell.PROPERTYKEY s_pkLatitude = new WinShell.PROPERTYKEY("8727CFFF-4868-4EC6-AD5B-81B98521D1AB", 100); // System.GPS.Latitude
-        static WinShell.PROPERTYKEY s_pkLatitudeRef = new WinShell.PROPERTYKEY("029C0252-5B86-46C7-ACA0-2769FFC8E3D4", 100); // System.GPS.LatitudeRef
-        static WinShell.PROPERTYKEY s_pkLongitude = new WinShell.PROPERTYKEY("C4C4DBB2-B593-466B-BBDA-D03D27D5E43A", 100); // System.GPS.Longitude
-        static WinShell.PROPERTYKEY s_pkLongitudeRef = new WinShell.PROPERTYKEY("33DCF22B-28D5-464C-8035-1EE9EFD25278", 100); // System.GPS.LongitudeRef
-
         public bool PostFromPhoto(string filename)
         {
+            PhotoUploader photoUploader = new PhotoUploader(m_album);
+
+            // Load the photo and metadata
+            if (!photoUploader.Load(filename))
             {
-                string extension = Path.GetExtension(filename);
-                if (!extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.WriteLine("Image to post must be a JPEG file. '{0}' is not.", Path.GetFileName(filename));
-                    return false;
-                }
+                Console.WriteLine(photoUploader.ErrorMessage);
+                return false;
             }
 
-            // Use the Windows Property Store to read the title and comments from the image
-            string photoTitle;
-            string photoComment;
-            int photoWidth;
-            int photoHeight;
-            DateTime photoDateTaken;
-            var metadata = new Google.BlogPostMetadata();
-            using (var propStore = WinShell.PropertyStore.Open(filename))
-            {
-                photoTitle = propStore.GetValue(s_pkTitle) as string;
-                photoComment = propStore.GetValue(s_pkComment) as string;
-                photoDateTaken = propStore.GetValue(s_pkDateTaken) as DateTime? ?? new DateTime((long)0);
-                metadata.PublishedDate = photoDateTaken;
-                metadata.UpdatedDate = DateTime.UtcNow;
-                object val = propStore.GetValue(s_pkWidth);
-                Console.WriteLine(val.GetType().ToString());
-                photoWidth = (int)(UInt32)propStore.GetValue(s_pkWidth);
-                photoHeight = (int)(UInt32)propStore.GetValue(s_pkHeight);
-                double photoLatitude;
-                double photoLongitude;
-                if (GetLatitudeLongitude(propStore, out photoLatitude, out photoLongitude))
-                {
-                    metadata.Latitude = photoLatitude;
-                    metadata.Longitude = photoLongitude;
-                }
-                metadata.Labels = propStore.GetValue(s_pkKeywords) as string[];
-            }
-
-            if (string.IsNullOrEmpty(photoTitle))
+            if (string.IsNullOrEmpty(photoUploader.Title))
             {
                 Console.WriteLine("JPEG photo must have a title in the metadata to pe posted to the blog.\r\nOne method is to use the 'Properties-Details' function in Windows File Explorer.");
                 return false;
             }
-            if (photoComment == null)
-            {
-                photoComment = string.Empty;
-            }
 
-            Console.WriteLine("Title: " + photoTitle);
+            Console.WriteLine("Title: " + photoUploader.Title);
 
             // See if the post already exists
-            var blogPost = m_blog.GetPostByTitle(photoTitle);
+            var blogPost = m_blog.GetPostByTitle(photoUploader.Title);
             if (blogPost != null)
             {
-                Console.WriteLine("Post with title '{0}' already exists in blog '{1}'.", photoTitle, m_blog.Name);
+                Console.WriteLine("Post with title '{0}' already exists in blog '{1}'.", photoUploader.Title, m_blog.Name);
                 return false;
             }
 
-            /* In Google/Picasa, the title is really a name or filename so we map things this way
-            * | FileMeta  | Google  |
-            * |-----------|---------|
-            * | filenaeme | title   |
-            * | title     | summary |
-            * | comment   | n/a     |
-            */
-
             // See if the photo already exists
-            var photo = m_album.GetPhotoBySummary(photoTitle);
+            var photo = photoUploader.GetAlbumMatch();
             if (photo != null)
             {
-                if (photo.Height != photoHeight
-                    || photo.Width != photoWidth
-                    || photo.DateTaken != photoDateTaken)
-                {
-                    Console.WriteLine("Photo with title '{0}' already exists in album: " + photo.Summary, m_album.Title);
-                    return false;
-                }
                 Console.WriteLine("Using matching photo already in album: " + m_album.Title);
             }
             else if (!DryRun)
             {
                 Console.WriteLine("Adding photo to album: " + m_album.Title);
-
-                // Generate a unique name (since the album contents are client-cached, this doesn't require multiple web requests)
-                string name;
-                {
-                    string basename = Path.GetFileNameWithoutExtension(filename);
-                    name = string.Concat(basename, ".jpg");
-                    if (m_album.GetPhotoByTitle(name) != null)
-                    {
-                        for (int i = 1; true; ++i)
-                        {
-                            name = string.Concat(basename, "_", i.ToString(), ".jpg");
-                            if (m_album.GetPhotoByTitle(name) == null) break;
-                        }
-                    }
-                }
-
-                // Add the photo to the album.
-                using (var stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
-                {
-                    photo = m_album.AddPhoto(name, photoTitle, stream);
-                }
+                photo = photoUploader.Upload();
             }
 
             // Calculate the height and width of the image on the page that matches
@@ -478,58 +411,55 @@ Description:
             int imgWidth;
             int imgHeight;
             // First assume that width will be the governing factor
-            if (photoWidth <= MaxWidth)
+            if (photoUploader.Width <= MaxWidth)
             {
-                imgWidth = photoWidth;
-                imgHeight = photoHeight;
+                imgWidth = photoUploader.Width;
+                imgHeight = photoUploader.Height;
             }
             else
             {
                 imgWidth = MaxWidth;
-                imgHeight = (photoHeight * MaxWidth) / photoWidth; // Scale height to match width
+                imgHeight = (photoUploader.Height * MaxWidth) / photoUploader.Width; // Scale height to match width
             }
             // If using width-dominance is too big then use height dominance
             if (imgHeight > MaxHeight)
             {
-                Debug.Assert(photoHeight > MaxHeight);
+                Debug.Assert(photoUploader.Height > MaxHeight);
                 imgHeight = MaxHeight;
-                imgWidth = (photoWidth * MaxHeight) / photoHeight; // Scale width to match height
+                imgWidth = (photoUploader.Width * MaxHeight) / photoUploader.Height; // Scale width to match height
             }
+
+            // Fill out the post metadata
+            var metadata = new Google.BlogPostMetadata();
+            metadata.UpdatedDate = DateTime.Now;
+            metadata.PublishedDate = photoUploader.DateTaken ?? metadata.UpdatedDate;
+            metadata.Latitude = photoUploader.Latitude;
+            metadata.Longitude = photoUploader.Longitude;
+            metadata.Labels = photoUploader.Labels;
 
             if (DryRun)
             {
                 Console.WriteLine("Dry run. Not posting.");
                 Console.WriteLine("Filename: " + Path.GetFileName(filename));
-                Console.WriteLine("Title: " + photoTitle);
-                Console.WriteLine("Comment: " + photoComment);
+                Console.WriteLine("Title: " + photoUploader.Title);
+                Console.WriteLine("Comment: " + photoUploader.Comment);
                 Console.WriteLine("Publish Date: " + metadata.PublishedDate.ToString("s"));
-                Console.WriteLine("Photo Dimensions: {0}x{1}", photoWidth, photoHeight);
+                Console.WriteLine("Photo Dimensions: {0}x{1}", photoUploader.Width, photoUploader.Height);
                 Console.WriteLine("Scaled Dimensions: {0}x{1}", imgWidth, imgHeight);
-                if (metadata.Latitude != 0.0 && metadata.Longitude != 0.0)
+                if (photoUploader.Latitude != 0.0)
                 {
-                    Console.WriteLine("Latitude;Longitude: {0:r};{1:r}", metadata.Latitude, metadata.Longitude);
+                    Console.WriteLine("Latitude;Longitude: {0:r};{1:r}", photoUploader.Latitude, photoUploader.Longitude);
                 }
-                if (metadata.Labels != null)
+                if (photoUploader.Labels != null)
                 {
-                    Console.WriteLine("Labels: " + string.Join(";", metadata.Labels));
+                    Console.WriteLine("Labels: " + string.Join(";", photoUploader.Labels));
                 }
                 return true;
             }
 
-            /*
-            Console.WriteLine("Full res: " + photo.JpegUrl);
-            Console.WriteLine("Alternate: " + photo.AlternateUrl);
-            Console.WriteLine("Width={0} Height={1}", photo.Width, photo.Height);
-            */
-
             // For high-resolution displays we use the version with double the horizontal resolution
             // of a Web pixel (web pixels aren't necessarily display pixels).
             photo.Refresh(imgWidth * 2);
-            /*
-            Console.WriteLine("800 res: " + photo.JpegUrl);
-            Console.WriteLine("Alternate: " + photo.AlternateUrl);
-            Console.WriteLine("Width={0} Height={1}", photo.Width, photo.Height);
-            */
 
             // Add the post to the blog
             Console.WriteLine("Adding new post to blog: " + m_blog.Name);
@@ -545,48 +475,436 @@ Description:
                             new XAttribute("width", imgWidth),
                             new XAttribute("height", imgHeight))),
                     new XElement("br"),
-                    photoComment);
+                    photoUploader.Comment);
                 html = doc.ToString();
             }
 
-            m_blog.AddPost(photoTitle, html, metadata, DraftMode);
+            m_blog.AddPost(photoUploader.Title, html, metadata, DraftMode);
 
             Console.WriteLine(DraftMode ? "Posted as draft!" : "Posted!");
 
             return true;
         }
 
-        private static bool GetLatitudeLongitude(WinShell.PropertyStore store, out double latitude, out double longitude)
+        public bool PostFromMarkDown(string filename)
         {
-            latitude = longitude = 0.0;
+            // Read metadata and convert the markdown to HTML.
+            Dictionary<string, string> yamlMetadata;
+            string html;
+            using (StreamReader reader = new StreamReader(filename, Encoding.UTF8, true))
+            {
+                // Read YAML metadata prefix if any
+                yamlMetadata = MicroYaml.Parse(reader);
 
-            double[] angle = (double[])store.GetValue(s_pkLatitude);
-            string direction = (string)store.GetValue(s_pkLatitudeRef);
-            if (angle == null || direction == null) return false;
-            //Debug.WriteLine("Latitude: {0} {1},{2},{3}", direction, angle[0], angle[1], angle[2]);
-            latitude = DegMinSecToDouble(direction, angle);
+                // Read and convert the markdown
+                using (var writer = new StringWriter())
+                {
+                    CommonMark.CommonMarkConverter.Convert(reader, writer);
+                    writer.Flush();
+                    html = writer.ToString();
+                }
+            }
 
-            angle = (double[])store.GetValue(s_pkLongitude);
-            direction = (string)store.GetValue(s_pkLongitudeRef);
-            if (angle == null || direction == null) return false;
-            //Debug.WriteLine("Longitude: {0} {1},{2},{3}", direction, angle[0], angle[1], angle[2]);
-            longitude = DegMinSecToDouble(direction, angle);
+            // Process the metadata
+            Google.BlogPostMetadata metadata = new Google.BlogPostMetadata();
+            string sval;
+            string postTitle;
+            if (yamlMetadata.TryGetValue("title", out sval))
+            {
+                postTitle = sval.Trim();
+            }
+            else
+            {
+                Console.WriteLine("Markdown post must have title in YAML prefix metadata.");
+                return false;
+            }
+            metadata.UpdatedDate = DateTime.Now;
+            if (yamlMetadata.TryGetValue("date", out sval))
+            {
+                DateTime postDate;
+                if (!DateTime.TryParse(sval, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal|DateTimeStyles.NoCurrentDateDefault|DateTimeStyles.AllowWhiteSpaces, out postDate))
+                {
+                    Console.WriteLine("Invalid date format: ", sval);
+                    return false;
+                }
+                metadata.PublishedDate = postDate;
+            }
+            else
+            {
+                metadata.PublishedDate = metadata.UpdatedDate;
+            }
+            if (yamlMetadata.TryGetValue("labels", out sval))
+            {
+                var labelList = new List<string>();
+                foreach(string label in sval.Split(';'))
+                {
+                    string l = label.Trim();
+                    if (l.Length > 0)
+                    {
+                        labelList.Add(l);
+                    }
+                }
+                metadata.Labels = labelList.ToArray();
+            }
+            
+            Console.WriteLine("=== Metadata ===");
+            Console.WriteLine("title: " + postTitle);
+            Console.WriteLine("date: " + metadata.PublishedDate.ToString("s"));
+            if (metadata.Labels != null)
+            {
+                Console.WriteLine("labels: " + String.Join(";", metadata.Labels));
+            }
+
+            // See if the post already exists
+            var blogPost = m_blog.GetPostByTitle(postTitle);
+            if (blogPost != null)
+            {
+                Console.WriteLine("Post with title '{0}' already exists in blog '{1}'.", postTitle, m_blog.Name);
+                return false;
+            }
+
+            // Parse the HTML into a DOM
+            XDocument doc;
+            using (var reader = new Html.HtmlReader(new StringReader(html)))
+            {
+                doc = System.Xml.Linq.XDocument.Load(reader);
+            }
+            html = null; // free the memory
+
+            // Process all image elements - uploading photos and updating links
+            foreach (var imgElement in doc.Descendants("img"))
+            {
+                UpdateImageNode(imgElement, filename);
+            }
+
+            // Convert to HTML string
+            using (var stringWriter = new StringWriter())
+            {
+                XmlWriterSettings writerSettings = new XmlWriterSettings();
+                writerSettings.OmitXmlDeclaration = true;
+                writerSettings.Indent = false;
+                writerSettings.CloseOutput = true;
+                using (XmlWriter writer = XmlWriter.Create(stringWriter, writerSettings))
+                {
+                    doc.WriteTo(writer);
+                }
+                html = stringWriter.ToString();
+            }
+
+            // If dry run, just write the post to the console
+            if (DryRun)
+            {
+                Console.WriteLine("=== DryRun Post ===");
+                Console.WriteLine(html);
+                return true;
+            }
+
+            // Add the post to the blog
+            Console.WriteLine("=== Adding new post to blog: {0} ===", m_blog.Name);
+            m_blog.AddPost(postTitle, html, metadata, DraftMode);
+            Console.WriteLine(DraftMode ? "Posted as draft!" : "Posted!");
 
             return true;
         }
 
-        private static double DegMinSecToDouble(string direction, double[] dms)
+        private bool UpdateImageNode(XElement imageNode, string docFilename)
         {
-            double result = dms[0];
-            if (dms.Length > 1) result += dms[1] / 60.0;
-            if (dms.Length > 2) result += dms[2] / 3600.0;
-
-            if (string.Equals(direction, "W", StringComparison.OrdinalIgnoreCase) || string.Equals(direction, "S", StringComparison.OrdinalIgnoreCase))
+            string imgSrc = imageNode.Attribute("src").Value;
+            if (string.IsNullOrEmpty(imgSrc))
             {
-                result = -result;
+                Console.WriteLine("Image has no source URL.");
+                return false;
             }
 
-            return result;
+            // Get the source and resolve the filename
+            Uri docUri = new Uri(docFilename);
+            Uri imageUri = new Uri(docUri, imgSrc);
+
+            // If scheme is not file (not a local file) then leave it alone.
+            if (imageUri.Scheme != "file") return true;
+            string localPath = imageUri.LocalPath;
+
+            Console.WriteLine("=== Image: {0} ===", localPath);
+
+            // Load the image
+            PhotoUploader photoUploader = new PhotoUploader(m_album);
+            if (!photoUploader.Load(localPath))
+            {
+                Console.WriteLine(photoUploader.ErrorMessage);
+                return false;
+            }
+
+            // Check for existing match
+            var photo = photoUploader.GetAlbumMatch();
+            if (photo != null)
+            {
+                Console.WriteLine("Using matching photo '{0}' already in album '{1}'.", photo.Title, m_album.Title);
+            }
+            else if (!DryRun)
+            {
+                Console.WriteLine("Adding photo '{0}' to album '{1}'.", Path.GetFileName(localPath), m_album.Title);
+                photo = photoUploader.Upload();
+            }
+
+            // Manage height and width. Maximums are the values specified in the image tag
+            // if present. Otherwise they are the values passed into the class. Regardless
+            // the original aspect ratio is always preserved and image are not blown up
+            // beyond their original size.
+            int maxWidth = ((int?)imageNode.Attribute("width")) ?? MaxWidth;
+            int maxHeight = ((int?)imageNode.Attribute("height")) ?? MaxHeight;
+
+            // Calculate the height and width of the image on the page that matches
+            // the original aspect ratio and fits within the maximum parameters.
+            int imgWidth;
+            int imgHeight;
+            // First assume that width will be the governing factor
+            if (photoUploader.Width <= maxWidth)
+            {
+                imgWidth = photoUploader.Width;
+                imgHeight = photoUploader.Height;
+            }
+            else
+            {
+                imgWidth = maxWidth;
+                imgHeight = (photoUploader.Height * maxWidth) / photoUploader.Width; // Scale height to match width
+            }
+            // If using width-dominance is too big then use height dominance
+            if (imgHeight > maxHeight)
+            {
+                Debug.Assert(photoUploader.Height > maxHeight);
+                imgHeight = maxHeight;
+                imgWidth = (photoUploader.Width * maxHeight) / photoUploader.Height; // Scale width to match height
+            }
+
+            string jpegUrl;
+            string alternateUrl;
+            if (DryRun)
+            {
+                Console.WriteLine("Dry run. Not uploading photo.");
+                Console.WriteLine("Filename: " + localPath);
+                if (!string.IsNullOrEmpty(photoUploader.Title))
+                {
+                    Console.WriteLine("Title: " + photoUploader.Title);
+                }
+                if (!string.IsNullOrEmpty(photoUploader.Comment))
+                {
+                    Console.WriteLine("Comment: " + photoUploader.Comment);
+                }
+                Console.WriteLine("Photo Dimensions: {0}x{1}", photoUploader.Width, photoUploader.Height);
+                Console.WriteLine("Scaled Dimensions: {0}x{1}", imgWidth, imgHeight);
+                string name = Path.GetFileName(localPath);
+                jpegUrl = "http://ScaledPhotoUrl.sample/" + name;
+                alternateUrl = "http://AlternatePhotoUrl.sample/" + name;
+            }
+            else
+            {
+                // In case of high-resolution displays we use the version with double the
+                // horizontal resolution of a Web pixel (web pixels aren't necessarily display pixels).
+                photo.Refresh(imgWidth * 2);
+                jpegUrl = photo.JpegUrl;
+                alternateUrl = photo.AlternateUrl;
+            }
+
+            // Create a new "a" element and insert it in place of the imageNode
+            XElement a = new XElement("a", new XAttribute("href", alternateUrl));
+            imageNode.AddAfterSelf(a);
+            imageNode.Remove();
+
+            // Update the image node with the proper src, width, and height
+            imageNode.SetAttributeValue("src", jpegUrl);
+            imageNode.SetAttributeValue("width", imgWidth);
+            imageNode.SetAttributeValue("height", imgHeight);
+
+            // Insert the image into the "a" node.
+            a.Add(imageNode);
+
+            return true;
+        }
+
+    }
+
+    /// <summary>
+    /// Class to manage uploading a file from the local drive to a Google WebAlbum.
+    /// Facilitates matching duplicates and transferring metadata.
+    /// This is a console class and writes error messages directly to the
+    /// console before returning.
+    /// </summary>
+    class PhotoUploader
+    {
+        // Property keys retrieved from https://msdn.microsoft.com/en-us/library/windows/desktop/dd561977(v=vs.85).aspx
+        static WinShell.PROPERTYKEY s_pkTitle = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 2); // System.Title
+        static WinShell.PROPERTYKEY s_pkComment = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 6); // System.Comment
+        static WinShell.PROPERTYKEY s_pkKeywords = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 5); // System.Keywords
+        static WinShell.PROPERTYKEY s_pkWidth = new WinShell.PROPERTYKEY("6444048F-4C8B-11D1-8B70-080036B11A03", 3);
+        static WinShell.PROPERTYKEY s_pkHeight = new WinShell.PROPERTYKEY("6444048F-4C8B-11D1-8B70-080036B11A03", 4);
+        static WinShell.PROPERTYKEY s_pkDateTaken = new WinShell.PROPERTYKEY("14B81DA1-0135-4D31-96D9-6CBFC9671A99", 36867); // System.Photo.DateTaken
+        static WinShell.PROPERTYKEY s_pkLatitude = new WinShell.PROPERTYKEY("8727CFFF-4868-4EC6-AD5B-81B98521D1AB", 100); // System.GPS.Latitude
+        static WinShell.PROPERTYKEY s_pkLatitudeRef = new WinShell.PROPERTYKEY("029C0252-5B86-46C7-ACA0-2769FFC8E3D4", 100); // System.GPS.LatitudeRef
+        static WinShell.PROPERTYKEY s_pkLongitude = new WinShell.PROPERTYKEY("C4C4DBB2-B593-466B-BBDA-D03D27D5E43A", 100); // System.GPS.Longitude
+        static WinShell.PROPERTYKEY s_pkLongitudeRef = new WinShell.PROPERTYKEY("33DCF22B-28D5-464C-8035-1EE9EFD25278", 100); // System.GPS.LongitudeRef
+
+        Google.WebAlbum m_album; // The album to which the photo will be loaded
+
+        string m_localFilePath; // The local path of the photo to be uploaded
+
+        // Metadata
+        string m_title;
+        string m_comment;
+        int m_width;
+        int m_height;
+        DateTime? m_dateTaken; // Null if no dateTaken
+        double m_latitude; // Zero if not present
+        double m_longitude; // Zero if not present
+        string[] m_labels;
+
+        // Error from load
+        string m_errMsg;
+
+        public PhotoUploader(Google.WebAlbum album)
+        {
+            m_album = album;
+        }
+
+        #region Metadata and other Properties
+
+        public string Title { get { return m_title; } }
+        public string Comment { get { return m_comment; } }
+        public int Width { get { return m_width; } }
+        public int Height { get { return m_height; } }
+        public DateTime? DateTaken { get { return m_dateTaken; } }
+        public double Latitude { get { return m_latitude; } }
+        public double Longitude { get { return m_longitude; } }
+        public string[] Labels { get { return m_labels; } }
+
+        public string ErrorMessage { get { return m_errMsg; } }
+
+        #endregion
+
+        /// <summary>
+        /// Load the photo and retrieve metadata
+        /// </summary>
+        /// <param name="localFilePath">The file path on the local machine or network.</param>
+        /// <returns>True if the file was found, and is JPEG.</returns>
+        /// <remarks>Upon a false return, error details are in the <see cref="ErrorMessage"/> property. </remarks>
+        public bool Load(string localFilePath)
+        {
+            // Init everything
+            m_title = null;
+            m_comment = null;
+            m_width = 0;
+            m_height = 0;
+            m_dateTaken = null;
+            m_latitude = 0.0;
+            m_longitude = 0.0;
+            m_labels = null;
+            m_errMsg = null;
+
+            {
+                string extension = Path.GetExtension(localFilePath);
+                if (!extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase))
+                {
+                    m_errMsg = string.Format("Image to post must be a JPEG file. '{0}' is not.", Path.GetFileName(localFilePath));
+                    return false;
+                }
+            }
+
+            if (!File.Exists(localFilePath))
+            {
+                m_errMsg = string.Format("Photo file does not exist: " + localFilePath);
+                return false;
+            }
+
+            // Use the Windows Property Store to read the title and comments from the image
+            try
+            {
+                using (var propStore = WinShell.PropertyStore.Open(localFilePath))
+                {
+                    m_title = propStore.GetValue(s_pkTitle) as string;
+                    m_comment = propStore.GetValue(s_pkComment) as string;
+                    m_dateTaken = propStore.GetValue(s_pkDateTaken) as DateTime?;
+                    m_width = (int)(UInt32)propStore.GetValue(s_pkWidth);
+                    m_height = (int)(UInt32)propStore.GetValue(s_pkHeight);
+                    m_latitude = GetLatOrLong(propStore, true);
+                    m_longitude = GetLatOrLong(propStore, false);
+                    m_labels = propStore.GetValue(s_pkKeywords) as string[];
+                }
+            }
+            catch (Exception err)
+            {
+                m_errMsg = string.Format("Failed to read metadata from photo: " + err.Message);
+                return false;
+            }
+
+            m_localFilePath = localFilePath;
+            if (m_title == null) m_title = string.Empty;
+            if (m_comment == null) m_comment = string.Empty;
+
+            return true;
+        }
+
+        public Google.WebPhoto GetAlbumMatch()
+        {
+            m_errMsg = null;
+            /* In Google/Picasa, the title is really a name or filename so we map things this way
+            * | FileMeta  | Google  |
+            * |-----------|---------|
+            * | filename  | title   |
+            * | title     | summary |
+            * | comment   | n/a     |
+            */
+            return m_album.GetMatchingPhoto(Path.GetFileName(m_localFilePath), m_title, m_width, m_height, m_dateTaken);
+        }
+
+        public Google.WebPhoto Upload()
+        {
+            m_errMsg = null;
+
+            // Generate a unique name (since the album contents are client-cached, this doesn't require multiple web requests)
+            string basename = Path.GetFileNameWithoutExtension(m_localFilePath);
+            string name = string.Concat(basename, ".jpg");
+            if (m_album.GetPhotoByTitle(name) != null)
+            {
+                for (int i = 1; true; ++i)
+                {
+                    name = string.Concat(basename, "_", i.ToString(), ".jpg");
+                    if (m_album.GetPhotoByTitle(name) == null) break;
+                }
+            }
+
+            // Add the photo to the album.
+            using (var stream = new FileStream(m_localFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                return m_album.AddPhoto(name, m_title, stream);
+            }
+        }
+
+        private static double GetLatOrLong(WinShell.PropertyStore store, bool getLatitude)
+        {
+            // Get the property keys
+            WinShell.PROPERTYKEY pkValue;
+            WinShell.PROPERTYKEY pkDirection;
+            if (getLatitude)
+            {
+                pkValue = s_pkLatitude;
+                pkDirection = s_pkLatitudeRef;
+            }
+            else
+            {
+                pkValue = s_pkLongitude;
+                pkDirection = s_pkLongitudeRef;
+            }
+
+            // Retrieve the values
+            double[] angle = (double[])store.GetValue(pkValue);
+            string direction = (string)store.GetValue(pkDirection);
+            if (angle == null || angle.Length == 0 || direction == null) return 0.0;
+
+            // Convert to double
+            double value = angle[0];
+            if (angle.Length > 1) value += angle[1] / 60.0;
+            if (angle.Length > 2) value += angle[2] / 3600.0;
+
+            return value;
         }
     }
 

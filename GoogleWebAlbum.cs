@@ -80,6 +80,8 @@ namespace Google
 
         static XNamespace nsAtom = "http://www.w3.org/2005/Atom";
         static XNamespace nsGphoto = "http://schemas.google.com/photos/2007";
+        static XNamespace nsMedia = "http://search.yahoo.com/mrss/";
+        static XNamespace nsExif = "http://schemas.google.com/photos/exif/2007";
 
         public static WebAlbum GetByTitle(string accessToken, string title)
         {
@@ -133,14 +135,14 @@ namespace Google
 
         public void Refresh(string imgmax = "d")
         {
-            m_album = WebAlbumUtility.HttpGetXml(string.Concat(WebAlbumUtility.c_PicasawebEndpoint, "/user/", m_userId, "/album/", m_albumId, "?kind=photo&imgmax=", imgmax), m_accessToken);
+            m_album = WebAlbumUtility.HttpGetXml(string.Concat(WebAlbumUtility.c_PicasawebEndpoint, "/user/", m_userId, "/albumid/", m_albumId, "?kind=photo&imgmax=", imgmax), m_accessToken);
         }
 
         /// <summary>
         /// Gets the photo with a particular title.
         /// </summary>
         /// <param name="title">The title to match.</param>
-        /// <returns>The photo if found or null if not found.</returns>
+        /// <returns>The first matching photo if found or null if not found.</returns>
         /// <remarks>The title is actually the filename (and the trailing part of the URL). Therefore
         /// by metata standards the label should be 'name', not 'title'.</remarks>
         public WebPhoto GetPhotoByTitle(string title)
@@ -155,18 +157,49 @@ namespace Google
             return new WebPhoto(m_accessToken, m_userId, m_albumId, matches.First());
         }
 
-        /// <summary>
-        /// Gets the photo with a particular summary.
-        /// </summary>
-        /// <param name="summary">The summary to match.</param>
-        /// <returns>The photo if found or null if not found.</returns>
-        /// <remarks>The summary is more like what metata standards would call 'title' whereas 'title'
-        /// in Picasa/Google terms is more like 'name' or 'filename'.</remarks>
         public WebPhoto GetPhotoBySummary(string summary)
         {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
+        /// Gets a photo from the album with matching metadata.
+        /// </summary>
+        /// <param name="name">The filename to match or null. (See Remarks for important details.)</param>
+        /// <param name="summary">The summary text or null Corresponds to "title" in exif metadata.</param>
+        /// <param name="width">The width of the image at full resolution or zero.</param>
+        /// <param name="height">The height of the image at full resolution or zero.</param>
+        /// <param name="dateTaken">The date the photo was taken or null.</param>
+        /// <returns>The first matching <see cref="WebPhoto"/> if a match is found or null.</returns>
+        /// <remarks>
+        /// <para>Searches on one or more criteria. If values are null or zero for integer values then that
+        /// criterion is not required.
+        /// </para>
+        /// <para>Name is a special case for matching. Any path or extension info is stripped
+        /// (e.g. '/photos/IMG_3945.jpg' becomes "IMG_3945") and it is considered a match if it matches the
+        /// beginning of the title of the album image. For example  "IMG_3945" will match "IMG_3945-4.jpg"
+        /// in the title. For strict matching of title use <see cref="GetPhotoByTitle(string)"/>.
+        /// </para>
+        /// <para>Matching of name and summary are case-insensitive.
+        /// </para>
+        /// </remarks>
+        public WebPhoto GetMatchingPhoto(string name = null, string summary = null, int width = 0, int height = 0, DateTime? dateTaken = null)
+        {
+            // Prep the values for searching
+            if (name != null)
+            {
+                name = Path.GetFileNameWithoutExtension(name);
+                if (name.Length == 0) name = null;
+            }
+            if (string.IsNullOrEmpty(summary)) summary = null;
+
             IEnumerable<XElement> matches =
                 from el in m_album.Elements(nsAtom + "entry")
-                where el.Element(nsAtom + "summary").Value.Equals(summary, StringComparison.OrdinalIgnoreCase)
+                where (name == null || el.Element(nsAtom + "title").Value.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+                   && (summary == null || el.Element(nsAtom + "summary").Value.Equals(summary, StringComparison.OrdinalIgnoreCase))
+                   && (width == 0 || width == int.Parse(el.Element(nsMedia + "group").Element(nsMedia + "content").Attribute("width").Value))
+                   && (height == 0 || height == int.Parse(el.Element(nsMedia + "group").Element(nsMedia + "content").Attribute("height").Value))
+                   && (dateTaken == null || dateTaken == ToDateTime(el.Element(nsExif + "tags").Element(nsExif + "time").Value))
                 select el;
 
             if (matches.Count() == 0) return null;
@@ -197,7 +230,7 @@ namespace Google
                 String.Concat("\r\n--", boundary, "\r\nContent-Type: image/jpeg\r\n\r\n"));
             byte[] footerBytes = System.Text.Encoding.ASCII.GetBytes(string.Concat("\r\n--", boundary, "--\r\n"));
 
-            string url = string.Concat(WebAlbumUtility.c_PicasawebEndpoint, "/user/", m_userId, "/album/", m_albumId, "?imgmax=d");
+            string url = string.Concat(WebAlbumUtility.c_PicasawebEndpoint, "/user/", m_userId, "/albumid/", m_albumId, "?imgmax=d");
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
             request.ContentType = "multipart/related; boundary=" + boundary;
             request.Method = "POST";
@@ -221,6 +254,11 @@ namespace Google
         }
 
         #endregion
+
+        static public DateTime ToDateTime(string googleDate)
+        {
+            return new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Local).AddMilliseconds(long.Parse(googleDate));
+        }
 
     } // Class WebAlbum
 
@@ -290,7 +328,7 @@ namespace Google
                 }
             }
 
-            m_xml = WebAlbumUtility.HttpGetXml(string.Concat(WebAlbumUtility.c_PicasawebEndpoint, "/user/", m_userId, "/album/", m_albumId, "/photoid/", m_photoId, "?imgmax=", imgmaxStr), m_accessToken);
+            m_xml = WebAlbumUtility.HttpGetXml(string.Concat(WebAlbumUtility.c_PicasawebEndpoint, "/user/", m_userId, "/albumid/", m_albumId, "/photoid/", m_photoId, "?imgmax=", imgmaxStr), m_accessToken);
             //WebAlbumUtility.DumpXml(m_xml, Console.Out);
         }
 
@@ -317,7 +355,6 @@ namespace Google
             get
             {
                 return int.Parse(m_xml.Element(nsMedia + "group").Element(nsMedia + "content").Attribute("width").Value);
-
             }
         }
 
@@ -333,8 +370,7 @@ namespace Google
         {
             get
             {
-                long ms = long.Parse(m_xml.Element(nsExif + "tags").Element(nsExif + "time").Value);
-                return new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Local).AddMilliseconds(ms);
+                return WebAlbum.ToDateTime(m_xml.Element(nsExif + "tags").Element(nsExif + "time").Value);
             }
         }
 
