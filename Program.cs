@@ -314,7 +314,7 @@ Description:
 #if DEBUG
                 Console.WriteLine(err.ToString());
 #else
-                Console.WriteLine(err.Message());
+                Console.WriteLine(err.Message);
 #endif
                 Console.WriteLine("Enter 'FMPostToBlogger -h' for help.");
             }
