@@ -572,7 +572,9 @@ Description:
 
             // Parse the HTML into a DOM
             XDocument doc;
-            using (var reader = new Html.HtmlReader(new StringReader(html)))
+            var settings = new Html.HtmlReaderSettings();
+            settings.IgnoreProcessingInstructions = true;
+            using (var reader = new Html.HtmlReader(new StringReader(html), settings))
             {
                 doc = System.Xml.Linq.XDocument.Load(reader);
             }
@@ -910,6 +912,11 @@ Description:
             double value = angle[0];
             if (angle.Length > 1) value += angle[1] / 60.0;
             if (angle.Length > 2) value += angle[2] / 3600.0;
+
+            if (direction.Equals("W", StringComparison.OrdinalIgnoreCase) || direction.Equals("S", StringComparison.OrdinalIgnoreCase))
+            {
+                value = -value;
+            }
 
             return value;
         }

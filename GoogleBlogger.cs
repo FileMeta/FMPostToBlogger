@@ -103,6 +103,8 @@ namespace Google
 
         public string Name { get { return m_name; } }
 
+        public string Id {  get { return m_blogId; } }
+
         public BlogPost GetPostByTitle(string title)
         {
             if (m_contents == null)
@@ -126,7 +128,7 @@ namespace Google
                 return null;
             }
 
-            return new BlogPost(m_accessToken, matches.First());
+            return new BlogPost(m_accessToken, m_blogId, matches.First());
         }
 
         public BlogPost AddPost(string title, string bodyHtml, BlogPostMetadata metadata = null, bool isDraft = false)
@@ -150,7 +152,7 @@ namespace Google
 
             var doc = BloggerUtility.HttpGetJson(request);
 
-            return new BlogPost(m_accessToken, doc);
+            return new BlogPost(m_accessToken, m_blogId, doc);
         }
 
         #endregion
@@ -263,14 +265,65 @@ namespace Google
     class BlogPost
     {
         string m_accessToken;
+        string m_blogId;
         string m_postId;
 
-        public BlogPost(string accessToken, XElement postDoc)
+        public BlogPost(string accessToken, string blogId, XElement postDoc)
         {
             m_accessToken = accessToken;
+            m_blogId = blogId;
             m_postId = postDoc.Element("id").Value;
         }
 
         public string Id { get { return m_postId; } }
+
+        /*
+        This was a temporary hack to correct some locations.
+        Keeping it here as sample code for future updates.
+
+        public void UpdateLocation(double latitude, double longitude)
+        {
+            if (latitude == 0.0 || longitude == 0.0) return;
+
+            if (Math.Abs(latitude - m_latitude) < 0.000001
+                && Math.Abs(longitude - m_longitude) < 0.000001)
+            {
+                Console.WriteLine("  Location is correct.");
+                return;
+            }
+
+            // Assemble the post
+            StringBuilder sb = new StringBuilder();
+            sb.Append("{\"kind\":\"blogger#post\",\"blog\":{\"id\":\"");
+            Blog.JsonEncode(sb, m_blogId);
+            sb.Append("\"}");
+            sb.AppendFormat(CultureInfo.InvariantCulture, ",\"location\":{{\"name\":\"Click Here\",\"lat\":\"{0:F12}\",\"lng\":\"{1:F12}\"}}",
+                latitude, longitude);
+            sb.Append("}");
+
+            Console.WriteLine(sb.ToString());
+            //return;
+            byte[] postBytes = Encoding.UTF8.GetBytes(sb.ToString());
+
+            // Compose the request
+            string url = string.Concat(BloggerUtility.c_BloggerEndpoint, "/blogs/", m_blogId, "/posts/", m_postId);
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.ContentType = "application/json";
+            request.Method = "PATCH";
+            request.Headers.Add(string.Concat("Authorization: Bearer ", m_accessToken));
+            request.ContentLength = postBytes.Length;
+
+            // Send the body
+            using (var stream = request.GetRequestStream())
+            {
+                stream.Write(postBytes, 0, postBytes.Length);
+            }
+
+            var doc = BloggerUtility.HttpGetJson(request);
+            WebAlbumUtility.DumpXml(doc, Console.Out);
+            Console.WriteLine("   Updated location.");
+        }
+        */
+
     }
 }
