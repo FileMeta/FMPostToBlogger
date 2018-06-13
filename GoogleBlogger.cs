@@ -52,6 +52,10 @@ namespace Google
         }
     }
 
+    /// <summary>
+    /// Wrapper class for a Blog on Google Blogger
+    /// API reference at https://developers.google.com/blogger/
+    /// </summary>
     class Blog
     {
         #region Static Members
@@ -81,7 +85,6 @@ namespace Google
         XElement m_doc;
         string m_name;
         string m_blogId;
-        XElement m_contents;
 
         private Blog(string accessToken, XElement doc)
         {
@@ -95,24 +98,21 @@ namespace Google
 
         #region Public Members
 
-        void Refresh()
-        {
-            m_contents = BloggerUtility.HttpGetJson(string.Concat(BloggerUtility.c_BloggerEndpoint, "/blogs/", m_blogId,
-                "/posts?fetchBodies=false&maxResults=500&fields=items(id,title,published,updated,labels,location)"), m_accessToken);
-        }
-
         public string Name { get { return m_name; } }
 
         public string Id {  get { return m_blogId; } }
 
         public BlogPost GetPostByTitle(string title)
         {
-            if (m_contents == null)
-            {
-                Refresh();
-            }
+            // Compose the query
+            var url = string.Concat(BloggerUtility.c_BloggerEndpoint, "/blogs/", m_blogId, "/posts/search?fetchBodies=false",
+                "&fields=items(id,title)",
+                "&q=", Uri.EscapeDataString($"title: \"{title}\"") );
 
-            var items = m_contents.Element("items");
+            // Search for the blog
+            var matchingPosts = BloggerUtility.HttpGetJson(url, m_accessToken);
+
+            var items = matchingPosts.Element("items");
             if (items == null)
             {
                 return null;
