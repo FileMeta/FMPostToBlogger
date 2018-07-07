@@ -659,8 +659,8 @@ Description:
             // if present. Otherwise they are the values passed into the class. Regardless
             // the original aspect ratio is always preserved and image are not blown up
             // beyond their original size.
-            int maxWidth = ((int?)imageNode.Attribute("width")) ?? MaxWidth;
-            int maxHeight = ((int?)imageNode.Attribute("height")) ?? MaxHeight;
+            int maxWidth = GetIntegerAttribute(imageNode, "width", MaxWidth);
+            int maxHeight = GetIntegerAttribute(imageNode, "height", MaxHeight);
 
             // Calculate the height and width of the image on the page that matches
             // the original aspect ratio and fits within the maximum parameters.
@@ -728,6 +728,21 @@ Description:
             a.Add(imageNode);
 
             return true;
+        }
+
+        static int GetIntegerAttribute(XElement imageNode, string attribute, int defaultValue)
+        {
+            var attrib = imageNode.Attribute(attribute);
+            if (attrib == null)
+            {
+                return defaultValue;
+            }
+            int value;
+            if (int.TryParse(attrib.Value, out value))
+            {
+                return value;
+            }
+            throw new ArgumentException($"<{imageNode.Name}> {attribute} attribute '{attrib.Value}' is not an integer. (Do not include units.)");
         }
 
     }
