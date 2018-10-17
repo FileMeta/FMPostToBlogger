@@ -592,10 +592,19 @@ Description:
                 XmlWriterSettings writerSettings = new XmlWriterSettings();
                 writerSettings.OmitXmlDeclaration = true;
                 writerSettings.Indent = false;
+                writerSettings.ConformanceLevel = ConformanceLevel.Fragment;
                 writerSettings.CloseOutput = true;
                 using (XmlWriter writer = XmlWriter.Create(stringWriter, writerSettings))
                 {
-                    doc.WriteTo(writer);
+                    var body = doc.Root.Element("body");
+                    if (body != null)
+                    {
+                        foreach(var ele in body.Elements())
+                        {
+                            ele.WriteTo(writer);
+                        }
+                    }
+
                 }
                 html = stringWriter.ToString();
             }
