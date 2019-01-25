@@ -49,6 +49,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConsoleHelper.cs" />
+    <Compile Include="GoogleApiUtility.cs" />
     <Compile Include="GoogleBlogger.cs" />
     <Compile Include="GoogleOAuth.cs" />
     <Compile Include="GoogleWebAlbum.cs" />
