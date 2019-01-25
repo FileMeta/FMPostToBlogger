@@ -26,6 +26,7 @@ namespace Google
             request.Method = "GET";
             request.Headers.Add(c_VersionHeader, c_VersionValue);
             request.Headers.Add(string.Concat("Authorization: Bearer ", accessToken));
+            request.Headers.Add("deprecation-extension", "true");
             return HttpGetXml(request);
         }
 
@@ -236,6 +237,7 @@ namespace Google
             request.Method = "POST";
             request.Headers.Add(WebAlbumUtility.c_VersionHeader, WebAlbumUtility.c_VersionValue);
             request.Headers.Add(string.Concat("Authorization: Bearer ", m_accessToken));
+            request.Headers.Add("deprecation-extension", "true");
             request.ContentLength = metadataBytes.Length + fileHeaderBytes.Length + photoStream.Length + footerBytes.Length;
 
             using (var stream = request.GetRequestStream())
