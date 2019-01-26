@@ -52,6 +52,7 @@
     <Compile Include="GoogleApiUtility.cs" />
     <Compile Include="GoogleBlogger.cs" />
     <Compile Include="GoogleOAuth.cs" />
+    <Compile Include="GooglePhotos.cs" />
     <Compile Include="GoogleWebAlbum.cs" />
     <Compile Include="HtmlReader.cs" />
     <Compile Include="MicroYaml.cs" />

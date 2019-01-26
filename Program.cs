@@ -218,7 +218,7 @@ Description:
                     if (authInteractive)
                     {
                         Console.WriteLine("Getting authorization from Google. Please respond to the login prompt in your browser.");
-                        authorized = oauth.Authorize(Google.WebAlbum.OAuthScope, Google.Blog.OAuthScope);
+                        authorized = oauth.Authorize(Google.Album.OAuthScope, Google.Blog.OAuthScope);
                         Win32Interop.ConsoleHelper.BringConsoleToFront();
                     }
                     else if (refreshToken != null)
@@ -241,6 +241,38 @@ Description:
                         }
                         break;
                     }
+
+                    /* ==== Test Code === */
+
+                    var album = Google.Album.GetByTitle(oauth.Access_Token, blogName);
+                    if (album == null)
+                    {
+                        Console.WriteLine($"Album '{blogName}' not found.");
+
+                        Console.WriteLine("Creating...");
+                        album = Google.Album.Create(oauth.Access_Token, blogName, true);
+                        Console.WriteLine("Created.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Album found.");
+                    }
+
+                    var photo = album.GetPhotoByFilename("WP_20190118_14_31_10_Pro.jpg");
+                    if (photo != null)
+                    {
+                        Console.WriteLine("Photo found by Filename.");
+                    }
+
+                    photo = album.GetMatchingPhoto("WP_20190118_14_31_10_Pro.jpg", "Stockton Marina, Stockton, California", 3264, 2448, new DateTime(2019, 1, 18, 22, 31, 10, DateTimeKind.Local));
+                    if (photo != null)
+                    {
+                        Console.WriteLine("Photo found by match.");
+                    }
+
+                    break;
+
+                    /* ================== */
 
                     // Open the blog poster and ensure the the blog exists
                     BlogPoster blogPoster = new BlogPoster(oauth.Access_Token);
