@@ -10,6 +10,8 @@ MarkDown support is for more extensive blogging when you want offline compositio
 
 Invoke "FMPostToBlogger -h" to view the syntax and help text. It requires your Google credentials to gain permission to access the Blogger APIs. One command can upload multiple blog posts.
 
+I use this mode for producing [OfThat.com](https://ofthat.com) and the [FileMeta Blog](https://blog.filemeta.org)
+
 ## Details
 
 FMPostToBlogger is written in C# and built using Microsoft Visual Studio 2017.
