@@ -90,31 +90,19 @@ namespace Google
 
         public BlogPost AddPost(string title, string bodyHtml, BlogPostMetadata metadata = null, bool isDraft = false)
         {
-            byte[] postBytes = assemblePost(m_blogId, title, bodyHtml, metadata);
-
-            // Compose the request
             string url = string.Concat(c_BloggerEndpoint, "/blogs/", m_blogId, "/posts/");
             if (isDraft) url = string.Concat(url, "?isDraft=true");
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-            request.ContentType = "application/json";
-            request.Method = "POST";
-            request.Headers.Add(string.Concat("Authorization: Bearer ", m_accessToken));
-            request.ContentLength = postBytes.Length;
 
-            // Send the body
-            using (var stream = request.GetRequestStream())
-            {
-                stream.Write(postBytes, 0, postBytes.Length);
-            }
+            string post = assemblePost(m_blogId, title, bodyHtml, metadata);
 
-            var doc = ApiUtility.HttpGetJson(request);
+            var doc = ApiUtility.HttpPostJson(url, post, m_accessToken);
 
             return new BlogPost(m_accessToken, m_blogId, doc);
         }
 
         #endregion
 
-        static byte[] assemblePost(string blogId, string title, string bodyHtml, BlogPostMetadata metadata)
+        static string assemblePost(string blogId, string title, string bodyHtml, BlogPostMetadata metadata)
         {
             StringBuilder sb = new StringBuilder();
             sb.Append("{\"kind\":\"blogger#post\",\"blog\":{\"id\":\"");
@@ -154,7 +142,7 @@ namespace Google
             ApiUtility.JsonEncode(sb, bodyHtml);
             sb.Append("\"}");
 
-            return Encoding.UTF8.GetBytes(sb.ToString());
+            return sb.ToString();
         }
 
     } // Class Blog
