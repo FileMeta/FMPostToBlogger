@@ -765,16 +765,16 @@ Description:
     class PhotoUploader
     {
         // Property keys retrieved from https://msdn.microsoft.com/en-us/library/windows/desktop/dd561977(v=vs.85).aspx
-        static WinShell.PROPERTYKEY s_pkTitle = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 2); // System.Title
-        static WinShell.PROPERTYKEY s_pkComment = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 6); // System.Comment
-        static WinShell.PROPERTYKEY s_pkKeywords = new WinShell.PROPERTYKEY("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 5); // System.Keywords
-        static WinShell.PROPERTYKEY s_pkWidth = new WinShell.PROPERTYKEY("6444048F-4C8B-11D1-8B70-080036B11A03", 3);
-        static WinShell.PROPERTYKEY s_pkHeight = new WinShell.PROPERTYKEY("6444048F-4C8B-11D1-8B70-080036B11A03", 4);
-        static WinShell.PROPERTYKEY s_pkDateTaken = new WinShell.PROPERTYKEY("14B81DA1-0135-4D31-96D9-6CBFC9671A99", 36867); // System.Photo.DateTaken
-        static WinShell.PROPERTYKEY s_pkLatitude = new WinShell.PROPERTYKEY("8727CFFF-4868-4EC6-AD5B-81B98521D1AB", 100); // System.GPS.Latitude
-        static WinShell.PROPERTYKEY s_pkLatitudeRef = new WinShell.PROPERTYKEY("029C0252-5B86-46C7-ACA0-2769FFC8E3D4", 100); // System.GPS.LatitudeRef
-        static WinShell.PROPERTYKEY s_pkLongitude = new WinShell.PROPERTYKEY("C4C4DBB2-B593-466B-BBDA-D03D27D5E43A", 100); // System.GPS.Longitude
-        static WinShell.PROPERTYKEY s_pkLongitudeRef = new WinShell.PROPERTYKEY("33DCF22B-28D5-464C-8035-1EE9EFD25278", 100); // System.GPS.LongitudeRef
+        static Interop.PropertyKey s_pkTitle = new Interop.PropertyKey("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 2); // System.Title
+        static Interop.PropertyKey s_pkComment = new Interop.PropertyKey("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 6); // System.Comment
+        static Interop.PropertyKey s_pkKeywords = new Interop.PropertyKey("F29F85E0-4FF9-1068-AB91-08002B27B3D9", 5); // System.Keywords
+        static Interop.PropertyKey s_pkWidth = new Interop.PropertyKey("6444048F-4C8B-11D1-8B70-080036B11A03", 3);
+        static Interop.PropertyKey s_pkHeight = new Interop.PropertyKey("6444048F-4C8B-11D1-8B70-080036B11A03", 4);
+        static Interop.PropertyKey s_pkDateTaken = new Interop.PropertyKey("14B81DA1-0135-4D31-96D9-6CBFC9671A99", 36867); // System.Photo.DateTaken
+        static Interop.PropertyKey s_pkLatitude = new Interop.PropertyKey("8727CFFF-4868-4EC6-AD5B-81B98521D1AB", 100); // System.GPS.Latitude
+        static Interop.PropertyKey s_pkLatitudeRef = new Interop.PropertyKey("029C0252-5B86-46C7-ACA0-2769FFC8E3D4", 100); // System.GPS.LatitudeRef
+        static Interop.PropertyKey s_pkLongitude = new Interop.PropertyKey("C4C4DBB2-B593-466B-BBDA-D03D27D5E43A", 100); // System.GPS.Longitude
+        static Interop.PropertyKey s_pkLongitudeRef = new Interop.PropertyKey("33DCF22B-28D5-464C-8035-1EE9EFD25278", 100); // System.GPS.LongitudeRef
 
         Google.WebAlbum m_album; // The album to which the photo will be loaded
 
@@ -914,8 +914,8 @@ Description:
         private static double GetLatOrLong(WinShell.PropertyStore store, bool getLatitude)
         {
             // Get the property keys
-            WinShell.PROPERTYKEY pkValue;
-            WinShell.PROPERTYKEY pkDirection;
+            Interop.PropertyKey pkValue;
+            Interop.PropertyKey pkDirection;
             if (getLatitude)
             {
                 pkValue = s_pkLatitude;
