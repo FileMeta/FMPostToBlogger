@@ -52,6 +52,7 @@
     <Compile Include="ConsoleHelper.cs" />
     <Compile Include="GoogleApiUtility.cs" />
     <Compile Include="GoogleBlogger.cs" />
+    <Compile Include="GoogleDrive.cs" />
     <Compile Include="GoogleOAuth.cs" />
     <Compile Include="GoogleWebAlbum.cs" />
     <Compile Include="HtmlReader.cs" />

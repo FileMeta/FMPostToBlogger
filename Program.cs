@@ -218,7 +218,7 @@ Description:
                     if (authInteractive)
                     {
                         Console.WriteLine("Getting authorization from Google. Please respond to the login prompt in your browser.");
-                        authorized = oauth.Authorize(Google.WebAlbum.OAuthScope, Google.Blog.OAuthScope);
+                        authorized = oauth.Authorize(Google.Blog.OAuthScope, Google.DriveFolder.OAuthScope);
                         Win32Interop.ConsoleHelper.BringConsoleToFront();
                     }
                     else if (refreshToken != null)
@@ -232,6 +232,9 @@ Description:
                     Console.WriteLine("Authenticated with Google.");
                     Console.WriteLine("refresh_token (-authtoken) = " + oauth.Refresh_Token);
                     Console.WriteLine();
+
+                    Google.DriveFolder.OpenPublic(oauth.Access_Token, "Blogger/BongoBand", true);
+                    break;
 
                     if (string.IsNullOrEmpty(blogName))
                     {
