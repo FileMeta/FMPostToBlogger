@@ -39,7 +39,8 @@ Options:
    -maxwidth               Maximum width and height in web pixels to use on
    -maxheight              images. Default width used with MarkDown posts.
                            Defaults are 800 width and 720 height.
-                           (See details below.)           
+                           (See details below.)
+   -linkfullres            Images link to full resolution copies.
    -draft                  Post in draft form. You can log into Blogger and
                            view or edit the post before publishing it.
    -dryrun                 Do a dry run. Connect with the blog, report
@@ -131,6 +132,7 @@ Description:
                 int maxWidth = c_defaultMaxWidth;
                 int maxHeight = c_defaultMaxHeight;
                 List<string> filenames = new List<string>();
+                bool linkFullRes = false;
                 bool draftMode = false;
                 bool dryRun = false;
                 if (args.Length == 0)
@@ -175,6 +177,10 @@ Description:
                             }
                             break;
 
+                        case "-linkfullres":
+                            linkFullRes = true;
+                            break;
+
                         case "-draft":
                             draftMode = true;
                             break;
@@ -206,6 +212,30 @@ Description:
                         break;
                     }
 
+                    string srcFilename = @"\\akershus\Archive\Photos\2017\17-02 February\11~Sat St Augustine, Florida including the fort, El Castillo de San Marcos\IMG_2827.JPG";
+                    string dstFilename = @"C:\Users\brand\Downloads\AA_Output1.jpg";
+
+                    using (var src = new FileStream(srcFilename, FileMode.Open, FileAccess.Read))
+                    {
+                        using (var dst = new FileStream(dstFilename, FileMode.Create, FileAccess.Write))
+                        {
+                            ImageFile.ResizeImage(src, dst, 800, 600);
+                        }
+                    }
+
+                    string srcFilename2 = @"C:\Users\brand\Downloads\christmas-star.png";
+                    string dstFilename2 = @"C:\Users\brand\Downloads\AA_Output2.jpg";
+
+                    using (var src = new FileStream(srcFilename2, FileMode.Open, FileAccess.Read))
+                    {
+                        using (var dst = new FileStream(dstFilename2, FileMode.Create, FileAccess.Write))
+                        {
+                            ImageFile.ResizeImage(src, dst, 200, 200);
+                        }
+                    }
+
+                    break;
+
                     // Check authentication method
                     if (authInteractive != (refreshToken == null))
                     {
@@ -233,9 +263,6 @@ Description:
                     Console.WriteLine("refresh_token (-authtoken) = " + oauth.Refresh_Token);
                     Console.WriteLine();
 
-                    Google.DriveFolder.OpenPublic(oauth.Access_Token, "Blogger/BongoBand", true);
-                    break;
-
                     if (string.IsNullOrEmpty(blogName))
                     {
                         if (filenames.Count != 0)
@@ -253,6 +280,7 @@ Description:
                     }
                     blogPoster.MaxWidth = maxWidth;
                     blogPoster.MaxHeight = maxHeight;
+                    blogPoster.LinkFullRes = linkFullRes;
                     blogPoster.DraftMode = draftMode;
                     blogPoster.DryRun = dryRun;
 
@@ -342,7 +370,7 @@ Description:
     {
         string m_accessToken;
         Google.Blog m_blog;
-        Google.WebAlbum m_album;
+        Google.DriveFolder m_photoFolder;
 
         public BlogPoster(string accessToken)
         {
@@ -353,6 +381,7 @@ Description:
 
         public int MaxWidth { get; set; }
         public int MaxHeight { get; set; }
+        public bool LinkFullRes { get; set; }
         public bool DraftMode { get; set; }
         public bool DryRun { get; set; }
 
@@ -366,20 +395,15 @@ Description:
                 return false;
             }
 
-            // Find the corresponding album
-            m_album = Google.WebAlbum.GetByTitle(m_accessToken, blogName);
-            if (m_album == null)
-            {
-                Console.WriteLine("Google/Picasa WebAlbum for blog '{0}' not found.", blogName);
-                return false;
-            }
+            // Find or create the corresponding Google Drive folder
+            m_photoFolder = Google.DriveFolder.OpenPublic(m_accessToken, "Blogger/" + blogName, true);
 
             return true;
         }
 
         public bool PostFromPhoto(string filename)
         {
-            PhotoUploader photoUploader = new PhotoUploader(m_album);
+            PhotoUploader photoUploader = new PhotoUploader(m_photoFolder);
 
             // Load the photo and metadata
             if (!photoUploader.Load(filename))
@@ -404,39 +428,19 @@ Description:
                 return false;
             }
 
-            // See if the photo already exists
-            var photo = photoUploader.GetAlbumMatch();
-            if (photo != null)
+            // Find or upload the photo
+            if (!DryRun)
             {
-                Console.WriteLine("Using matching photo already in album: " + m_album.Title);
-            }
-            else if (!DryRun)
-            {
-                Console.WriteLine("Adding photo to album: " + m_album.Title);
-                photo = photoUploader.Upload();
-            }
+                photoUploader.Upload();
 
-            // Calculate the height and width of the image on the page that matches
-            // the original aspect ratio and fits within the maximum parameters.
-            int imgWidth;
-            int imgHeight;
-            // First assume that width will be the governing factor
-            if (photoUploader.Width <= MaxWidth)
-            {
-                imgWidth = photoUploader.Width;
-                imgHeight = photoUploader.Height;
-            }
-            else
-            {
-                imgWidth = MaxWidth;
-                imgHeight = (photoUploader.Height * MaxWidth) / photoUploader.Width; // Scale height to match width
-            }
-            // If using width-dominance is too big then use height dominance
-            if (imgHeight > MaxHeight)
-            {
-                Debug.Assert(photoUploader.Height > MaxHeight);
-                imgHeight = MaxHeight;
-                imgWidth = (photoUploader.Width * MaxHeight) / photoUploader.Height; // Scale width to match height
+                if (photoUploader.FoundExisting)
+                {
+                    Console.WriteLine("Using matching photo already in album: " + m_photoFolder.Path);
+                }
+                else
+                {
+                    Console.WriteLine("Added photo to album: " + m_photoFolder.Path);
+                }
             }
 
             // Fill out the post metadata
@@ -454,8 +458,9 @@ Description:
                 Console.WriteLine("Title: " + photoUploader.Title);
                 Console.WriteLine("Comment: " + photoUploader.Comment);
                 Console.WriteLine("Publish Date: " + metadata.PublishedDate.ToString("s"));
-                Console.WriteLine("Photo Dimensions: {0}x{1}", photoUploader.Width, photoUploader.Height);
-                Console.WriteLine("Scaled Dimensions: {0}x{1}", imgWidth, imgHeight);
+                Console.WriteLine("Photo Dimensions: {0}x{1}", photoUploader.OriginalWidth, photoUploader.OriginalHeight);
+                Console.WriteLine("Scaled Dimensions: {0}x{1}", photoUploader.OpWidth, photoUploader.OpHeight);
+                Console.WriteLine("Web Pixel Dimensions: {0}x{1}", photoUploader.WebWidth, photoUploader.WebHeight);
                 if (photoUploader.Latitude != 0.0)
                 {
                     Console.WriteLine("Latitude;Longitude: {0:r};{1:r}", photoUploader.Latitude, photoUploader.Longitude);
@@ -467,23 +472,15 @@ Description:
                 return true;
             }
 
-            // For high-resolution displays we use the version with double the horizontal resolution
-            // of a Web pixel (web pixels aren't necessarily display pixels).
-            photo.Refresh(imgWidth * 2);
-
             // Add the post to the blog
             Console.WriteLine("Adding new post to blog: " + m_blog.Name);
 
             // Compose the post using XML
             string html;
             {
+                // Build the document
                 var doc = new XElement("div",
-                    new XElement("a",
-                        new XAttribute("href", photo.AlternateUrl),
-                        new XElement("img",
-                            new XAttribute("src", photo.JpegUrl),
-                            new XAttribute("width", imgWidth),
-                            new XAttribute("height", imgHeight))),
+                    BuildImageElement(photoUploader),   
                     new XElement("br"),
                     photoUploader.Comment);
                 html = doc.ToString();
@@ -648,57 +645,24 @@ Description:
             Console.WriteLine("=== Image: {0} ===", localPath);
 
             // Load the image
-            PhotoUploader photoUploader = new PhotoUploader(m_album);
+            PhotoUploader photoUploader = new PhotoUploader(m_photoFolder);
             if (!photoUploader.Load(localPath))
             {
                 Console.WriteLine(photoUploader.ErrorMessage);
                 return false;
             }
 
-            // Check for existing match
-            var photo = photoUploader.GetAlbumMatch();
-            if (photo != null)
-            {
-                Console.WriteLine("Using matching photo '{0}' already in album '{1}'.", photo.Title, m_album.Title);
-            }
-            else if (!DryRun)
-            {
-                Console.WriteLine("Adding photo '{0}' to album '{1}'.", Path.GetFileName(localPath), m_album.Title);
-                photo = photoUploader.Upload();
-            }
-
             // Manage height and width. Maximums are the values specified in the image tag
             // if present. Otherwise they are the values passed into the class. Regardless
             // the original aspect ratio is always preserved and image are not blown up
             // beyond their original size.
-            int maxWidth = GetIntegerAttribute(imageNode, "width", MaxWidth);
-            int maxHeight = GetIntegerAttribute(imageNode, "height", MaxHeight);
+            photoUploader.TargetWidth = GetIntegerAttribute(imageNode, "width", MaxWidth);
+            photoUploader.TargetHeight = GetIntegerAttribute(imageNode, "height", MaxHeight);
 
-            // Calculate the height and width of the image on the page that matches
-            // the original aspect ratio and fits within the maximum parameters.
-            int imgWidth;
-            int imgHeight;
-            // First assume that width will be the governing factor
-            if (photoUploader.Width <= maxWidth)
-            {
-                imgWidth = photoUploader.Width;
-                imgHeight = photoUploader.Height;
-            }
-            else
-            {
-                imgWidth = maxWidth;
-                imgHeight = (photoUploader.Height * maxWidth) / photoUploader.Width; // Scale height to match width
-            }
-            // If using width-dominance is too big then use height dominance
-            if (imgHeight > maxHeight)
-            {
-                Debug.Assert(photoUploader.Height > maxHeight);
-                imgHeight = maxHeight;
-                imgWidth = (photoUploader.Width * maxHeight) / photoUploader.Height; // Scale width to match height
-            }
+            photoUploader.IncludeOriginalResolution = LinkFullRes;
 
-            string jpegUrl;
-            string alternateUrl;
+            string opUrl;
+            string originalUrl;
             if (DryRun)
             {
                 Console.WriteLine("Dry run. Not uploading photo.");
@@ -711,35 +675,52 @@ Description:
                 {
                     Console.WriteLine("Comment: " + photoUploader.Comment);
                 }
-                Console.WriteLine("Photo Dimensions: {0}x{1}", photoUploader.Width, photoUploader.Height);
-                Console.WriteLine("Scaled Dimensions: {0}x{1}", imgWidth, imgHeight);
+                Console.WriteLine("Photo Dimensions: {0}x{1}", photoUploader.OriginalWidth, photoUploader.OriginalHeight);
+                Console.WriteLine("Scaled Dimensions: {0}x{1}", photoUploader.OpWidth, photoUploader.OpHeight);
+                Console.WriteLine("Web Pixel Dimensions: {0}x{1}", photoUploader.WebWidth, photoUploader.WebHeight);
                 string name = Path.GetFileName(localPath);
-                jpegUrl = "http://ScaledPhotoUrl.sample/" + name;
-                alternateUrl = "http://AlternatePhotoUrl.sample/" + name;
+                opUrl = "http://ScaledPhotoUrl.sample/" + name;
+                originalUrl = "http://OriginalPhotoUrl.sample/" + name;
             }
             else
             {
-                // In case of high-resolution displays we use the version with double the
-                // horizontal resolution of a Web pixel (web pixels aren't necessarily display pixels).
-                photo.Refresh(imgWidth * 2);
-                jpegUrl = photo.JpegUrl;
-                alternateUrl = photo.AlternateUrl;
+                photoUploader.Upload();
+                if (photoUploader.FoundExisting)
+                {
+                    Console.WriteLine("Using matching photo '{0}' already in album '{1}'.", photoUploader.Title, m_photoFolder.Path);
+                }
+                else
+                {
+                    Console.WriteLine("Added photo '{0}' to album '{1}'.", Path.GetFileName(localPath), m_photoFolder.Path);
+                }
+
+                opUrl = photoUploader.OpUrl;
+                originalUrl = photoUploader.OriginalUrl; // Will be null if IncludeOriginalResolution is false;
             }
 
-            // Create a new "a" element and insert it in place of the imageNode
-            XElement a = new XElement("a", new XAttribute("href", alternateUrl));
-            imageNode.AddAfterSelf(a);
+            // Create a new image element and insert it in place of the imageNode
+            imageNode.AddAfterSelf(BuildImageElement(photoUploader));
             imageNode.Remove();
 
-            // Update the image node with the proper src, width, and height
-            imageNode.SetAttributeValue("src", jpegUrl);
-            imageNode.SetAttributeValue("width", imgWidth);
-            imageNode.SetAttributeValue("height", imgHeight);
-
-            // Insert the image into the "a" node.
-            a.Add(imageNode);
-
             return true;
+        }
+
+        private XElement BuildImageElement(PhotoUploader photoUploader)
+        {
+            XElement imgEle = new XElement("img",
+                new XAttribute("src", photoUploader.OpUrl),
+                new XAttribute("width", photoUploader.WebWidth),
+                new XAttribute("height", photoUploader.WebHeight));
+
+            // Wrap with a link to the full res version
+            if (LinkFullRes)
+            {
+                imgEle = new XElement("a",
+                    new XAttribute("href", photoUploader.OriginalUrl),
+                    imgEle);
+            }
+
+            return imgEle;
         }
 
         static int GetIntegerAttribute(XElement imageNode, string attribute, int defaultValue)
@@ -779,38 +760,127 @@ Description:
         static Interop.PropertyKey s_pkLongitude = new Interop.PropertyKey("C4C4DBB2-B593-466B-BBDA-D03D27D5E43A", 100); // System.GPS.Longitude
         static Interop.PropertyKey s_pkLongitudeRef = new Interop.PropertyKey("33DCF22B-28D5-464C-8035-1EE9EFD25278", 100); // System.GPS.LongitudeRef
 
-        Google.WebAlbum m_album; // The album to which the photo will be loaded
+        Google.DriveFolder m_folder; // The folder to which the photo will be loaded
+
+        // Width and height in web browser pixels of the space in which the image will be rendered.
+        // With high-resolution displays, the image will be converted to approximately double this
+        // resolution. If either value is zero then the other value will be governing. If both
+        // values are zero then the image will be rendered at original resolution.
+        int m_targetWidth = 0;
+        int m_targetHeight = 0;
+
+        // The width and height of the original image. If IncludeOriginalResolution
+        // is set then an image of this resolution will also be uploaded.
+        int m_originalWidth;
+        int m_originalHeight;
+
+        // The calculated width and height of the image in web pixels. These maintain
+        // the aspect ratio of the original image. For high-resolution images they are
+        // 1/2 the resolution of the operational image.
+        int m_webWidth;
+        int m_webHeight;
+
+        // The width and height of the operational uploaded image in pixels. These maintain
+        // the aspect ratio of the original image. If the original image is high resolution
+        // these dimensions are reduced in order to save bandwidth. Under optimal circumstances
+        // they are double the values of webWidth and webHeight.
+        int m_opWidth;
+        int m_opHeight;
+
+        bool m_includeOriginalResolution = true;
+        bool m_foundExisting = false;
 
         string m_localFilePath; // The local path of the photo to be uploaded
 
-        // Metadata
+        // Metadata from the original image file
         string m_title;
         string m_comment;
-        int m_width;
-        int m_height;
         DateTime? m_dateTaken; // Null if no dateTaken
         double m_latitude; // Zero if not present
         double m_longitude; // Zero if not present
         string[] m_labels;
 
+        // References to uploaded files
+        Google.DriveFile m_opFile;
+        Google.DriveFile m_originalFile;
+
+
         // Error from load
         string m_errMsg;
 
-        public PhotoUploader(Google.WebAlbum album)
+        public PhotoUploader(Google.DriveFolder folder)
         {
-            m_album = album;
+            m_folder = folder;
         }
 
         #region Metadata and other Properties
 
+        /// <summary>
+        /// TargetWidth is the width in web pixels of the space into which the
+        /// image will be rendered.
+        /// </summary>
+        /// <remarks>
+        /// <para>If the value is zero, there is no limit on the width.
+        /// </para>
+        /// <para>The actual image will be approximately double this resolution
+        /// to perform well on high-resolution displays.
+        /// </para>
+        /// </remarks>
+        public int TargetWidth { get => m_targetWidth; set => m_targetWidth = value; }
+
+        /// <summary>
+        /// TargetHeight is the height in web pixels of the space into which the
+        /// image will be rendered.
+        /// </summary>
+        /// <remarks>
+        /// <para>If the value is zero, there is no limit on the width.
+        /// </para>
+        /// <para>The actual image will be approximately double this resolution
+        /// to perform well on high-resolution displays.
+        /// </para>
+        /// </remarks>
+        public int TargetHeight { get => m_targetHeight; set => m_targetHeight = value; }
+
+        /// <summary>
+        /// If true, the image will be uploaded both at original and at target resolutions. If
+        /// false, the image is only uploaded at target resolution.
+        /// </summary>
+        public bool IncludeOriginalResolution { get => m_includeOriginalResolution; set => m_includeOriginalResolution = value; }
+
+        /// <summary>
+        /// If true, existing file or files were found and no upload was necessary.
+        /// </summary>
+        public bool FoundExisting => m_foundExisting;
+
+        /// <summary>
+        /// The width and height of the original image.
+        /// </summary>
+        public int OriginalWidth { get { return m_originalWidth; } }
+        public int OriginalHeight { get { return m_originalHeight; } }
+
+        /// <summary>
+        /// The width and height of the image in Web Browser pixels.
+        /// </summary>
+        public int WebWidth { get => m_webWidth; }
+        public int WebHeight { get => m_webHeight; }
+
+        /// <summary>
+        /// The width and height of the operational, uploaded image. For images
+        /// of sufficient resolution these will be approximately double <see cref="WebWidth"/>
+        /// and <see cref="WebHeight"/>.
+        /// </summary>
+        public int OpWidth { get => m_opWidth; }
+        public int OpHeight { get => m_opHeight; }
+
         public string Title { get { return m_title; } }
         public string Comment { get { return m_comment; } }
-        public int Width { get { return m_width; } }
-        public int Height { get { return m_height; } }
         public DateTime? DateTaken { get { return m_dateTaken; } }
         public double Latitude { get { return m_latitude; } }
         public double Longitude { get { return m_longitude; } }
         public string[] Labels { get { return m_labels; } }
+
+        public string OpUrl => throw new NotImplementedException();
+        public string OriginalUrl => throw new NotImplementedException();
 
         public string ErrorMessage { get { return m_errMsg; } }
 
@@ -827,13 +897,17 @@ Description:
             // Init everything
             m_title = null;
             m_comment = null;
-            m_width = 0;
-            m_height = 0;
             m_dateTaken = null;
             m_latitude = 0.0;
             m_longitude = 0.0;
             m_labels = null;
             m_errMsg = null;
+            m_originalWidth = 0;
+            m_originalHeight = 0;
+            m_webWidth = 0;
+            m_webHeight = 0;
+            m_opWidth = 0;
+            m_opHeight = 0;
 
             {
                 string extension = Path.GetExtension(localFilePath);
@@ -858,8 +932,8 @@ Description:
                     m_title = propStore.GetValue(s_pkTitle) as string;
                     m_comment = propStore.GetValue(s_pkComment) as string;
                     m_dateTaken = propStore.GetValue(s_pkDateTaken) as DateTime?;
-                    m_width = (int)(UInt32)propStore.GetValue(s_pkWidth);
-                    m_height = (int)(UInt32)propStore.GetValue(s_pkHeight);
+                    m_originalWidth = (int)(UInt32)propStore.GetValue(s_pkWidth);
+                    m_originalHeight = (int)(UInt32)propStore.GetValue(s_pkHeight);
                     m_latitude = GetLatOrLong(propStore, true);
                     m_longitude = GetLatOrLong(propStore, false);
                     m_labels = propStore.GetValue(s_pkKeywords) as string[];
@@ -875,43 +949,145 @@ Description:
             if (m_title == null) m_title = string.Empty;
             if (m_comment == null) m_comment = string.Empty;
 
+            // =========================
+            // Calculate the height and width of the space into which the image must fit on the page
+
+            int windowWidth = (m_targetWidth > 0) ? m_targetWidth : int.MaxValue;
+            int windowHeight = (m_targetHeight > 0) ? m_targetHeight : int.MaxValue;
+
+            // If both are maxed out - reduce to the defaults
+            if (windowWidth == int.MaxValue && windowHeight == int.MaxValue)
+            {
+                windowWidth = Program.c_defaultMaxWidth;
+                windowHeight = Program.c_defaultMaxHeight;
+            }
+
+            // =========================
+            // Calculate the height and width of the image on the page that matches
+            // the original aspect ratio and fits within the maximum parameters.
+
+            // First, assume that width will be the governing factor
+            if (m_originalWidth <= windowWidth)
+            {
+                m_webWidth = m_originalWidth;
+                m_webHeight = m_originalHeight;
+            }
+            else
+            {
+                m_webWidth = windowWidth;
+                m_webHeight = (windowWidth * m_originalHeight) / m_originalWidth; // Scale height to match width
+            }
+
+            // If using width-dominance is too tall then use height dominance
+            if (m_webHeight > windowHeight)
+            {
+                Debug.Assert(m_originalHeight > windowHeight);
+                m_webHeight = windowHeight;
+                m_webWidth = (windowHeight * m_originalWidth) / m_originalHeight; // Scale width to match height
+            }
+
+            // =========================
+            // Calculate the height and width of the resized image to be uploaded
+            // Ideally, it will be double the web height and width.
+            if (m_originalWidth > m_webWidth * 2)
+            {
+                m_opWidth = m_webWidth * 2;
+                m_opHeight = m_webHeight * 2;
+            }
+            else
+            {
+                m_opWidth = m_originalWidth;
+                m_opHeight = m_originalHeight;
+            }
+
             return true;
         }
 
-        public Google.WebPhoto GetAlbumMatch()
+        public void Upload()
         {
-            m_errMsg = null;
-            /* In Google/Picasa, the title is really a name or filename so we map things this way
-            * | FileMeta  | Google  |
-            * |-----------|---------|
-            * | filename  | title   |
-            * | title     | summary |
-            * | comment   | n/a     |
-            */
-            return m_album.GetMatchingPhoto(Path.GetFileName(m_localFilePath), m_title, m_width, m_height, m_dateTaken);
-        }
+            m_foundExisting = true;
 
-        public Google.WebPhoto Upload()
-        {
-            m_errMsg = null;
+            // Look for existing operational file
+            string opFilename = DeriveFilename(m_opWidth, m_opHeight);
+            m_opFile = m_folder.GetFile(opFilename);
 
-            // Generate a unique name (since the album contents are client-cached, this doesn't require multiple web requests)
-            string basename = Path.GetFileNameWithoutExtension(m_localFilePath);
-            string name = string.Concat(basename, ".jpg");
-            if (m_album.GetPhotoByTitle(name) != null)
+            if (m_opFile == null)
             {
-                for (int i = 1; true; ++i)
+                m_foundExisting = false;
+
+                string tempFilename = null;
+                try
                 {
-                    name = string.Concat(basename, "_", i.ToString(), ".jpg");
-                    if (m_album.GetPhotoByTitle(name) == null) break;
+                    string uploadFilename = null;
+                    if (m_opWidth != m_originalWidth || m_opHeight != m_originalHeight)
+                    {
+                        ImageFile.ResizeImage(null, null, m_opWidth, m_opHeight);
+                    }
+
+                    m_opFile = m_folder.Upload(uploadFilename, opFilename);
+                }
+                finally
+                {
+                    if (tempFilename != null)
+                    {
+                        File.Delete(tempFilename);
+                    }
                 }
             }
 
-            // Add the photo to the album.
-            using (var stream = new FileStream(m_localFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            if (!m_includeOriginalResolution) return;
+
+            // Look for existing original file
+            string originalFilename = DeriveFilename(m_originalWidth, m_originalHeight);
+            m_originalFile = m_folder.GetFile(originalFilename);
+
+            if (m_originalFile == null)
             {
-                return m_album.AddPhoto(name, m_title, stream);
+                m_foundExisting = false;
+                m_originalFile = m_folder.Upload(m_localFilePath, originalFilename);
             }
+        }
+
+        private string DeriveFilename(int width, int height)
+        {
+            var sb = new StringBuilder();
+
+            // Encode the title as the beginning of the filename
+            if (!string.IsNullOrEmpty(m_title))
+            {
+                foreach (char c in m_title)
+                {
+                    if (char.IsWhiteSpace(c) || char.IsControl(c) || char.IsPunctuation(c) || char.IsSymbol(c))
+                    {
+                        // Do nothing
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                    }
+                }
+            }
+
+            // If there was no title, use the filename (without extension) instead
+            if (sb.Length == 0)
+            {
+                sb.Append(Path.GetFileNameWithoutExtension(m_localFilePath));
+            }
+
+            // Append DateTaken if present
+            if (m_dateTaken.HasValue)
+            {
+                sb.Append('_');
+                sb.Append(m_dateTaken.Value.ToString("yyyy-MM-dd"));
+            }
+
+            // Append dimensions
+            sb.Append($"_{width}x{height}");
+
+            // Append extension
+            sb.Append(Path.GetExtension(m_localFilePath));
+
+            return sb.ToString();
         }
 
         private static double GetLatOrLong(WinShell.PropertyStore store, bool getLatitude)
@@ -946,6 +1122,23 @@ Description:
             }
 
             return value;
+        }
+
+        private static string FilenameEncode(string title)
+        {
+            var sb = new StringBuilder();
+            foreach (char c in title)
+            {
+                if (char.IsControl(c) || char.IsPunctuation(c) || char.IsSymbol(c))
+                {
+                    // Do nothing
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+            return sb.ToString();
         }
     }
 

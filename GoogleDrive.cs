@@ -9,13 +9,15 @@ namespace Google
 {
     class DriveFolder
     {
-        #region Static Members
+        #region Constants
 
         public const string OAuthScope = "https://www.googleapis.com/auth/drive.file";
 
         const string c_DriveEndpoint = "https://www.googleapis.com/drive/v3";
 
-        #endregion Static Members
+        #endregion Constants
+
+        #region Creation
 
         public static DriveFolder OpenPublic(string accessToken, string folderPath, bool allowCreate = true)
         {
@@ -30,7 +32,7 @@ namespace Google
                 {
                     nextId = GetId(accessToken, id, part, true);
                 }
-                
+
                 if (nextId == null)
                 {
                     nextId = CreateFolder(accessToken, id, part);
@@ -40,15 +42,46 @@ namespace Google
                 id = nextId;
             }
 
-            Console.WriteLine($"Folder ID: {id}");
-
             if (created)
             {
                 GrantPublicReadAccess(accessToken, id);
             }
 
-            return null;
+            return new DriveFolder(accessToken, id, folderPath);
         }
+
+        string m_accessToken;
+        string m_id;
+        string m_path;
+
+        private DriveFolder(string accessToken, string id, string path)
+        {
+            m_accessToken = accessToken;
+            m_id = id;
+            m_path = path;
+        }
+
+        #endregion
+
+        #region Public Operations
+
+        public string Path => m_path;
+
+        public DriveFile GetFile(string filename)
+        {
+            string id = GetId(m_accessToken, m_id, filename, false);
+            if (id == null) return null;
+            return new DriveFile(m_accessToken, id);
+        }
+
+        public DriveFile Upload(string filename, string localFilename)
+        {
+            throw new NotImplementedException();
+        }
+
+        #endregion
+
+        #region Internal Operations
 
         private static string GetId(string accessToken, string parentId, string name, bool isFolder)
         {
@@ -99,7 +132,17 @@ namespace Google
             ApiUtility.DumpXml(doc, Console.Out);
         }
 
+        #endregion Internal Operations
 
+    }
+
+    class DriveFile
+    {
+
+        public DriveFile(string accessToken, string id)
+        {
+
+        }
 
     }
 }

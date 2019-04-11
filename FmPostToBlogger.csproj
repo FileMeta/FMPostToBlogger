@@ -39,6 +39,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Web" />
     <Reference Include="System.Xml.Linq" />
@@ -56,6 +57,7 @@
     <Compile Include="GoogleOAuth.cs" />
     <Compile Include="GoogleWebAlbum.cs" />
     <Compile Include="HtmlReader.cs" />
+    <Compile Include="ImageFile.cs" />
     <Compile Include="MicroYaml.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
