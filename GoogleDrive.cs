@@ -1,9 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Xml.Linq;
-using System.Linq;
+using System.IO;
+using System.Net;
 using System.Text;
-using System.Threading.Tasks;
+
+// Google Drive API Reference: https://developers.google.com/drive/api/v3/reference/
 
 namespace Google
 {
@@ -14,6 +14,7 @@ namespace Google
         public const string OAuthScope = "https://www.googleapis.com/auth/drive.file";
 
         const string c_DriveEndpoint = "https://www.googleapis.com/drive/v3";
+        const string c_DriveUploadEndpoint = "https://www.googleapis.com/upload/drive/v3/files";
 
         #endregion Constants
 
@@ -65,7 +66,7 @@ namespace Google
 
         #region Public Operations
 
-        public string Path => m_path;
+        public string FolderPath => m_path;
 
         public DriveFile GetFile(string filename)
         {
@@ -74,9 +75,92 @@ namespace Google
             return new DriveFile(m_accessToken, id);
         }
 
-        public DriveFile Upload(string filename, string localFilename)
+        // Truly random number (from Random.org) likely to never occur again.
+        const string c_multipartBoundary = "4b246b371e4e605324156d64";
+        static readonly byte[] s_boundaryBytes = ApiUtility.Utf8NoBom.GetBytes(c_multipartBoundary);
+        static readonly byte[] s_dashesBytes = new byte[] { (byte)'-', (byte)'-' };
+        static readonly byte[] s_crlfBytes = new byte[] { 13, 10 };
+
+        public DriveFile Upload(Stream uploadStream, string name)
         {
-            throw new NotImplementedException();
+            string url = c_DriveUploadEndpoint + "?uploadtype=multipart";
+
+            string postJsonPart = string.Concat(
+                "Content-Type: application/json; charset=UTF-8\r\n\r\n",
+                "{\"name\": \"", ApiUtility.JsonEncode(name), "\",",
+                "\"parents\": [\"", ApiUtility.JsonEncode(m_id), "\"]}"
+                );
+            var postJsonBytes = ApiUtility.Utf8NoBom.GetBytes(postJsonPart);
+
+            string contentType;
+            string ext = Path.GetExtension(name).ToLower();
+            if (string.IsNullOrEmpty(ext)) throw new ArgumentException("Image filename lacks extension.");
+            ext = ext.Substring(1);
+            switch (ext)
+            {
+                case "jpg":
+                    contentType = "image/jpeg";
+                    break;
+
+                case "tif":
+                    contentType = "image/tiff";
+                    break;
+
+                case "htm":
+                case "html":
+                    contentType = "text/html";
+                    break;
+
+                case "xml":
+                    contentType = "text/xml";
+                    break;
+
+                case "json":
+                    contentType = "application/json";
+                    break;
+
+                default:
+                    contentType = "image/" + ext;   // Works for a majority of image types
+                    break;
+            }
+
+            var contentTypeBytes = ApiUtility.Utf8NoBom.GetBytes(
+                string.Concat("Content-Type: ", contentType, "\r\n\r\n"));
+
+            // Calculate the content length
+            long contentLength = 90 + postJsonBytes.Length + contentTypeBytes.Length + uploadStream.Length;
+
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.ContentType = "multipart/related; boundary=" + c_multipartBoundary;
+            request.Method = "POST";
+            request.Headers.Add(string.Concat("Authorization: Bearer ", m_accessToken));
+            request.ContentLength = contentLength;
+
+            // Send the body
+            using (var stream = request.GetRequestStream())
+            {
+                // Write the body (comments indicate the number of bytes - used for the content-length calculation
+                stream.Write(s_dashesBytes, 0, 2);                      // 2
+                stream.Write(s_boundaryBytes, 0, 24);                   // 24
+                stream.Write(s_crlfBytes, 0, 2);                        // 2
+                stream.Write(postJsonBytes, 0, postJsonBytes.Length);
+                stream.Write(s_crlfBytes, 0, 2);                        // 2
+                stream.Write(s_dashesBytes, 0, 2);                      // 2
+                stream.Write(s_boundaryBytes, 0, 24);                   // 24
+                stream.Write(s_crlfBytes, 0, 2);                        // 2
+                stream.Write(contentTypeBytes, 0, contentTypeBytes.Length);
+                uploadStream.CopyTo(stream);
+                stream.Write(s_crlfBytes, 0, 2);                        // 2
+                stream.Write(s_dashesBytes, 0, 2);                      // 2
+                stream.Write(s_boundaryBytes, 0, 24);                   // 24
+                stream.Write(s_dashesBytes, 0, 2);                      // 2
+                stream.Write(s_crlfBytes, 0, 2);                        // 2
+            }
+
+            var doc = ApiUtility.HttpGetJson(request);
+            ApiUtility.DumpXml(doc, Console.Out);
+
+            return new DriveFile(m_accessToken, doc.Element("id").Value);
         }
 
         #endregion
@@ -138,11 +222,13 @@ namespace Google
 
     class DriveFile
     {
+        string m_id;
 
         public DriveFile(string accessToken, string id)
         {
 
         }
 
+        public string RawUrl => "https://drive.google.com/uc?export=view&id=" + m_id;
     }
 }

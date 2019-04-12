@@ -212,30 +212,6 @@ Description:
                         break;
                     }
 
-                    string srcFilename = @"\\akershus\Archive\Photos\2017\17-02 February\11~Sat St Augustine, Florida including the fort, El Castillo de San Marcos\IMG_2827.JPG";
-                    string dstFilename = @"C:\Users\brand\Downloads\AA_Output1.jpg";
-
-                    using (var src = new FileStream(srcFilename, FileMode.Open, FileAccess.Read))
-                    {
-                        using (var dst = new FileStream(dstFilename, FileMode.Create, FileAccess.Write))
-                        {
-                            ImageFile.ResizeImage(src, dst, 800, 600);
-                        }
-                    }
-
-                    string srcFilename2 = @"C:\Users\brand\Downloads\christmas-star.png";
-                    string dstFilename2 = @"C:\Users\brand\Downloads\AA_Output2.jpg";
-
-                    using (var src = new FileStream(srcFilename2, FileMode.Open, FileAccess.Read))
-                    {
-                        using (var dst = new FileStream(dstFilename2, FileMode.Create, FileAccess.Write))
-                        {
-                            ImageFile.ResizeImage(src, dst, 200, 200);
-                        }
-                    }
-
-                    break;
-
                     // Check authentication method
                     if (authInteractive != (refreshToken == null))
                     {
@@ -435,11 +411,11 @@ Description:
 
                 if (photoUploader.FoundExisting)
                 {
-                    Console.WriteLine("Using matching photo already in album: " + m_photoFolder.Path);
+                    Console.WriteLine("Using matching photo already in album: " + m_photoFolder.FolderPath);
                 }
                 else
                 {
-                    Console.WriteLine("Added photo to album: " + m_photoFolder.Path);
+                    Console.WriteLine("Added photo to album: " + m_photoFolder.FolderPath);
                 }
             }
 
@@ -687,11 +663,11 @@ Description:
                 photoUploader.Upload();
                 if (photoUploader.FoundExisting)
                 {
-                    Console.WriteLine("Using matching photo '{0}' already in album '{1}'.", photoUploader.Title, m_photoFolder.Path);
+                    Console.WriteLine("Using matching photo '{0}' already in album '{1}'.", photoUploader.Title, m_photoFolder.FolderPath);
                 }
                 else
                 {
-                    Console.WriteLine("Added photo '{0}' to album '{1}'.", Path.GetFileName(localPath), m_photoFolder.Path);
+                    Console.WriteLine("Added photo '{0}' to album '{1}'.", Path.GetFileName(localPath), m_photoFolder.FolderPath);
                 }
 
                 opUrl = photoUploader.OpUrl;
@@ -1011,27 +987,35 @@ Description:
             string opFilename = DeriveFilename(m_opWidth, m_opHeight);
             m_opFile = m_folder.GetFile(opFilename);
 
+            // File not found, so upload
             if (m_opFile == null)
             {
                 m_foundExisting = false;
 
-                string tempFilename = null;
-                try
+                Stream uploadImage = null;
                 {
-                    string uploadFilename = null;
+                    // Open the file
+                    Stream srcImage = new FileStream(m_localFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+                    // If it needs to be resized, do so
                     if (m_opWidth != m_originalWidth || m_opHeight != m_originalHeight)
                     {
-                        ImageFile.ResizeImage(null, null, m_opWidth, m_opHeight);
+                        using (srcImage)
+                        {
+                            uploadImage = new MemoryStream();
+                            ImageFile.ResizeImage(srcImage, uploadImage, m_opWidth, m_opHeight);
+                            uploadImage.Position = 0L;
+                        }
                     }
-
-                    m_opFile = m_folder.Upload(uploadFilename, opFilename);
-                }
-                finally
-                {
-                    if (tempFilename != null)
+                    else
                     {
-                        File.Delete(tempFilename);
+                        uploadImage = srcImage;
                     }
+                }
+
+                using (uploadImage)
+                {
+                    m_opFile = m_folder.Upload(uploadImage, opFilename);
                 }
             }
 
@@ -1044,7 +1028,10 @@ Description:
             if (m_originalFile == null)
             {
                 m_foundExisting = false;
-                m_originalFile = m_folder.Upload(m_localFilePath, originalFilename);
+                using (Stream srcImage = new FileStream(m_localFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    m_originalFile = m_folder.Upload(srcImage, originalFilename);
+                }
             }
         }
 
@@ -1052,27 +1039,7 @@ Description:
         {
             var sb = new StringBuilder();
 
-            // Encode the title as the beginning of the filename
-            if (!string.IsNullOrEmpty(m_title))
-            {
-                foreach (char c in m_title)
-                {
-                    if (char.IsWhiteSpace(c) || char.IsControl(c) || char.IsPunctuation(c) || char.IsSymbol(c))
-                    {
-                        // Do nothing
-                    }
-                    else
-                    {
-                        sb.Append(c);
-                    }
-                }
-            }
-
-            // If there was no title, use the filename (without extension) instead
-            if (sb.Length == 0)
-            {
-                sb.Append(Path.GetFileNameWithoutExtension(m_localFilePath));
-            }
+            sb.Append(Path.GetFileNameWithoutExtension(m_localFilePath));
 
             // Append DateTaken if present
             if (m_dateTaken.HasValue)
