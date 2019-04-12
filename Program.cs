@@ -256,7 +256,7 @@ Description:
                     }
                     blogPoster.MaxWidth = maxWidth;
                     blogPoster.MaxHeight = maxHeight;
-                    blogPoster.LinkFullRes = linkFullRes;
+                    blogPoster.LinkUnscaled = linkFullRes;
                     blogPoster.DraftMode = draftMode;
                     blogPoster.DryRun = dryRun;
 
@@ -357,7 +357,7 @@ Description:
 
         public int MaxWidth { get; set; }
         public int MaxHeight { get; set; }
-        public bool LinkFullRes { get; set; }
+        public bool LinkUnscaled { get; set; }
         public bool DraftMode { get; set; }
         public bool DryRun { get; set; }
 
@@ -454,9 +454,23 @@ Description:
             // Compose the post using XML
             string html;
             {
+                // Build the image element
+                XElement imageEle = new XElement("img",
+                    new XAttribute("src", photoUploader.OpUrl),
+                    new XAttribute("width", photoUploader.WebWidth),
+                    new XAttribute("height", photoUploader.WebHeight));
+
+                // Wrap with a link to the full res version
+                if (LinkUnscaled)
+                {
+                    imageEle = new XElement("a",
+                        new XAttribute("href", photoUploader.OriginalUrl),
+                        imageEle);
+                }
+
                 // Build the document
                 var doc = new XElement("div",
-                    BuildImageElement(photoUploader),   
+                    imageEle,   
                     new XElement("br"),
                     photoUploader.Comment);
                 html = doc.ToString();
@@ -635,7 +649,18 @@ Description:
             photoUploader.TargetWidth = GetIntegerAttribute(imageNode, "width", MaxWidth);
             photoUploader.TargetHeight = GetIntegerAttribute(imageNode, "height", MaxHeight);
 
-            photoUploader.IncludeOriginalResolution = LinkFullRes;
+            // Allow the img tag to override default LinkUnscaled value
+            bool linkUnscaled = LinkUnscaled;
+            {
+                string att = imageNode.Attribute("linkunscaled")?.Value;
+                if (att != null)
+                {
+                    linkUnscaled = !string.Equals(att, "false", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(att, "0", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            photoUploader.IncludeOriginalResolution = linkUnscaled;
 
             string opUrl;
             string originalUrl;
@@ -674,29 +699,22 @@ Description:
                 originalUrl = photoUploader.OriginalUrl; // Will be null if IncludeOriginalResolution is false;
             }
 
-            // Create a new image element and insert it in place of the imageNode
-            imageNode.AddAfterSelf(BuildImageElement(photoUploader));
-            imageNode.Remove();
-
-            return true;
-        }
-
-        private XElement BuildImageElement(PhotoUploader photoUploader)
-        {
-            XElement imgEle = new XElement("img",
-                new XAttribute("src", photoUploader.OpUrl),
-                new XAttribute("width", photoUploader.WebWidth),
-                new XAttribute("height", photoUploader.WebHeight));
-
-            // Wrap with a link to the full res version
-            if (LinkFullRes)
+            // Update the image
+            imageNode.SetAttributeValue("src", opUrl);
+            imageNode.SetAttributeValue("width", photoUploader.OpWidth);
+            imageNode.SetAttributeValue("height", photoUploader.OpHeight);
+            imageNode.SetAttributeValue("linkunscaled", null);
+            
+            // If linkUnscaled, wrap the image in a link
+            if (linkUnscaled)
             {
-                imgEle = new XElement("a",
-                    new XAttribute("href", photoUploader.OriginalUrl),
-                    imgEle);
+                var a = new XElement("a", new XAttribute("href", originalUrl));
+                imageNode.AddAfterSelf(a);
+                imageNode.Remove();
+                a.Add(imageNode);
             }
 
-            return imgEle;
+            return true;
         }
 
         static int GetIntegerAttribute(XElement imageNode, string attribute, int defaultValue)
@@ -855,8 +873,8 @@ Description:
         public double Longitude { get { return m_longitude; } }
         public string[] Labels { get { return m_labels; } }
 
-        public string OpUrl => throw new NotImplementedException();
-        public string OriginalUrl => throw new NotImplementedException();
+        public string OpUrl => m_opFile.RawUrl;
+        public string OriginalUrl => m_originalFile.RawUrl;
 
         public string ErrorMessage { get { return m_errMsg; } }
 
