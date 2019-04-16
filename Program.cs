@@ -40,7 +40,7 @@ Options:
    -maxheight              images. Default width used with MarkDown posts.
                            Defaults are 800 width and 720 height.
                            (See details below.)
-   -linkfullres            Images link to full resolution copies.
+   -linkunscaled           Images link to full resolution copies.
    -draft                  Post in draft form. You can log into Blogger and
                            view or edit the post before publishing it.
    -dryrun                 Do a dry run. Connect with the blog, report
@@ -132,7 +132,7 @@ Description:
                 int maxWidth = c_defaultMaxWidth;
                 int maxHeight = c_defaultMaxHeight;
                 List<string> filenames = new List<string>();
-                bool linkFullRes = false;
+                bool linkUnscaled = false;
                 bool draftMode = false;
                 bool dryRun = false;
                 if (args.Length == 0)
@@ -177,8 +177,8 @@ Description:
                             }
                             break;
 
-                        case "-linkfullres":
-                            linkFullRes = true;
+                        case "-linkunscaled":
+                            linkUnscaled = true;
                             break;
 
                         case "-draft":
@@ -256,7 +256,7 @@ Description:
                     }
                     blogPoster.MaxWidth = maxWidth;
                     blogPoster.MaxHeight = maxHeight;
-                    blogPoster.LinkUnscaled = linkFullRes;
+                    blogPoster.LinkUnscaled = linkUnscaled;
                     blogPoster.DraftMode = draftMode;
                     blogPoster.DryRun = dryRun;
 
@@ -380,6 +380,9 @@ Description:
         public bool PostFromPhoto(string filename)
         {
             PhotoUploader photoUploader = new PhotoUploader(m_photoFolder);
+            photoUploader.IncludeOriginalResolution = LinkUnscaled;
+            photoUploader.TargetWidth = MaxWidth;
+            photoUploader.TargetHeight = MaxHeight;
 
             // Load the photo and metadata
             if (!photoUploader.Load(filename))
@@ -634,20 +637,25 @@ Description:
 
             Console.WriteLine("=== Image: {0} ===", localPath);
 
-            // Load the image
+            // Manage height and width. Maximums are the values specified in the image tag
+            // if present. Otherwise they are the values passed into the class. Regardless
+            // the original aspect ratio is always preserved and image are not blown up
+            // beyond their original size.
             PhotoUploader photoUploader = new PhotoUploader(m_photoFolder);
+            photoUploader.TargetWidth = GetIntegerAttribute(imageNode, "width");
+            photoUploader.TargetHeight = GetIntegerAttribute(imageNode, "height");
+            if (photoUploader.TargetWidth == 0 && photoUploader.TargetHeight == 0)
+            {
+                photoUploader.TargetWidth = MaxWidth;
+                photoUploader.TargetHeight = MaxHeight;
+            }
+
+            // Load the image
             if (!photoUploader.Load(localPath))
             {
                 Console.WriteLine(photoUploader.ErrorMessage);
                 return false;
             }
-
-            // Manage height and width. Maximums are the values specified in the image tag
-            // if present. Otherwise they are the values passed into the class. Regardless
-            // the original aspect ratio is always preserved and image are not blown up
-            // beyond their original size.
-            photoUploader.TargetWidth = GetIntegerAttribute(imageNode, "width", MaxWidth);
-            photoUploader.TargetHeight = GetIntegerAttribute(imageNode, "height", MaxHeight);
 
             // Allow the img tag to override default LinkUnscaled value
             bool linkUnscaled = LinkUnscaled;
@@ -701,13 +709,14 @@ Description:
 
             // Update the image
             imageNode.SetAttributeValue("src", opUrl);
-            imageNode.SetAttributeValue("width", photoUploader.OpWidth);
-            imageNode.SetAttributeValue("height", photoUploader.OpHeight);
+            imageNode.SetAttributeValue("width", photoUploader.WebWidth);
+            imageNode.SetAttributeValue("height", photoUploader.WebHeight);
             imageNode.SetAttributeValue("linkunscaled", null);
             
             // If linkUnscaled, wrap the image in a link
             if (linkUnscaled)
             {
+                System.Diagnostics.Debug.Assert(!string.IsNullOrEmpty(originalUrl));
                 var a = new XElement("a", new XAttribute("href", originalUrl));
                 imageNode.AddAfterSelf(a);
                 imageNode.Remove();
@@ -717,12 +726,13 @@ Description:
             return true;
         }
 
-        static int GetIntegerAttribute(XElement imageNode, string attribute, int defaultValue)
+        // Retrieves an integer attribute. Returns zero if not present.
+        static int GetIntegerAttribute(XElement imageNode, string attribute)
         {
             var attrib = imageNode.Attribute(attribute);
             if (attrib == null)
             {
-                return defaultValue;
+                return 0;
             }
             int value;
             if (int.TryParse(attrib.Value, out value))
@@ -874,7 +884,7 @@ Description:
         public string[] Labels { get { return m_labels; } }
 
         public string OpUrl => m_opFile.RawUrl;
-        public string OriginalUrl => m_originalFile.RawUrl;
+        public string OriginalUrl => m_originalFile?.RawUrl;
 
         public string ErrorMessage { get { return m_errMsg; } }
 
@@ -949,11 +959,10 @@ Description:
             int windowWidth = (m_targetWidth > 0) ? m_targetWidth : int.MaxValue;
             int windowHeight = (m_targetHeight > 0) ? m_targetHeight : int.MaxValue;
 
-            // If both are maxed out - reduce to the defaults
+            // If both are maxed out this is an error
             if (windowWidth == int.MaxValue && windowHeight == int.MaxValue)
             {
-                windowWidth = Program.c_defaultMaxWidth;
-                windowHeight = Program.c_defaultMaxHeight;
+                throw new InvalidOperationException("TargetWidth and/or TargetHeight must be specified.");
             }
 
             // =========================

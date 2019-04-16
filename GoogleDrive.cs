@@ -83,6 +83,7 @@ namespace Google
 
         public DriveFile Upload(Stream uploadStream, string name)
         {
+            System.Diagnostics.Debug.WriteLine("Uploading: " + name);
             string url = c_DriveUploadEndpoint + "?uploadtype=multipart";
 
             string postJsonPart = string.Concat(
@@ -158,7 +159,7 @@ namespace Google
             }
 
             var doc = ApiUtility.HttpGetJson(request);
-            ApiUtility.DumpXml(doc, Console.Out);
+            //ApiUtility.DumpXml(doc, Console.Out);
 
             return new DriveFile(m_accessToken, doc.Element("id").Value);
         }
@@ -226,7 +227,7 @@ namespace Google
 
         public DriveFile(string accessToken, string id)
         {
-
+            m_id = id;
         }
 
         public string RawUrl => "https://drive.google.com/uc?export=view&id=" + m_id;
