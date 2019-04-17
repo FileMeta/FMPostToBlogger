@@ -1030,7 +1030,7 @@ Description:
                         using (srcImage)
                         {
                             uploadImage = new MemoryStream();
-                            ImageFile.ResizeImage(srcImage, uploadImage, m_opWidth, m_opHeight);
+                            ImageFile.ResizeAndRightImage(srcImage, uploadImage, m_opWidth, m_opHeight);
                             uploadImage.Position = 0L;
                         }
                     }
