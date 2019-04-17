@@ -58,6 +58,7 @@
     <Compile Include="GoogleWebAlbum.cs" />
     <Compile Include="HtmlReader.cs" />
     <Compile Include="ImageFile.cs" />
+    <Compile Include="ImageUploader.cs" />
     <Compile Include="MicroYaml.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
