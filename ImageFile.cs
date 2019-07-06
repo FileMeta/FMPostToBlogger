@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace FmPostToBlogger
 {
@@ -20,12 +21,20 @@ namespace FmPostToBlogger
                 int interimHeight = height;
                 RotateFlipType rft = RotateFlipType.RotateNoneFlipNone;
 
+                var imgprops = image.PropertyItems;
+
                 // Check the orientation and determine whether image must be rotated
                 {
-                    var prop = image.GetPropertyItem(c_propId_Orientation);
-                    if (prop != null)
+                    // Image.GetPropertyItem throws an exception if the image is not Exif
+                    // So we use the property collection instead
+                    var orientation =
+                    (from ip in imgprops
+                     where ip.Id == c_propId_Orientation
+                     select ip.Value).FirstOrDefault();
+
+                    if (orientation != null)
                     {
-                        switch (prop.Value[0])
+                        switch (orientation[0])
                         {
                             // case 1: // Vertical
                             //  do nothing;
@@ -63,7 +72,7 @@ namespace FmPostToBlogger
                     resizedImage.SetResolution(72, 72);
 
                     // Copy metadata and fix rotation.
-                    foreach(var prop in image.PropertyItems)
+                    foreach(var prop in imgprops)
                     {
                         if (prop.Id == c_propId_Orientation)
                         {
@@ -81,7 +90,8 @@ namespace FmPostToBlogger
                         graphic.DrawImage(image, 0, 0, interimWidth, interimHeight);
                     }
 
-                    resizedImage.RotateFlip(rft);
+                    if (rft != RotateFlipType.RotateNoneFlipNone)
+                        resizedImage.RotateFlip(rft);
                     resizedImage.Save(dst, image.RawFormat);
                 }
             }
@@ -167,4 +177,5 @@ namespace FmPostToBlogger
         }
 
     }
+
 }
